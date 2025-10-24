@@ -23,6 +23,7 @@
         "./*"
       ]
     },
+<<<<<<< HEAD
     "types": [
       "node"
     ],
@@ -31,6 +32,10 @@
         "name": "next"
       }
     ]
+=======
+    "types": ["node"],
+    "plugins": [{ "name": "next" }]
+>>>>>>> 9ab13ab5e6d1c21e877262cf9412914aeb6dad01
   },
   "include": [
     "next-env.d.ts",
