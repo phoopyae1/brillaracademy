@@ -10,7 +10,8 @@ export const fallbackFeatures: Feature[] = [
   {
     id: 1,
     name: 'Authentication & Profile',
-    description: 'Secure sign-in, profile management, and multi-factor authentication to protect every student account.',
+    description:
+      'Secure sign-in with admin-issued accounts, centralized profile management, and multi-factor authentication to protect every student account.',
     category: 'Foundation',
     icon: 'shield'
   },
