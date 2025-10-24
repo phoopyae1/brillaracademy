@@ -5,6 +5,7 @@ import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
 import FeatureGrid from '@/components/FeatureGrid';
+import StudentPortalSection from '@/components/StudentPortal';
 import { fetchFeatures } from '@/lib/db';
 
 export const revalidate = 60;
@@ -40,6 +41,8 @@ export default async function HomePage() {
             </Button>
           </Stack>
         </Stack>
+
+        <StudentPortalSection />
 
         <Divider sx={{ my: { xs: 4, md: 6 } }} />
 
