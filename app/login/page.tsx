@@ -125,15 +125,21 @@ export default function LoginPage() {
               </Button>
             </Stack>
 
-            <Divider>or</Divider>
+            <Divider>Need access?</Divider>
 
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
-              <Link href="/register" underline="hover">
-                Need an account? Register here
-              </Link>
-              <Link href="/create" underline="hover">
-                Interested in building a new class?
-              </Link>
+            <Stack spacing={1.5}>
+              <Typography variant="body2" color="text.secondary">
+                Student accounts are issued by the administrative teams. Reach out to the Student Administrative Office or the IT
+                administrator to receive your credentials.
+              </Typography>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
+                <Typography variant="body2" color="text.secondary">
+                  Email: admin-office@brillaracademy.edu
+                </Typography>
+                <Link href="/create" underline="hover">
+                  Interested in building a new class?
+                </Link>
+              </Stack>
             </Stack>
           </Stack>
         </Paper>
