@@ -12,6 +12,7 @@ import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
 import FormControl from '@mui/material/FormControl';
 import Select from '@mui/material/Select';
+import Alert from '@mui/material/Alert';
 
 export default function StudentPortalSection() {
   return (
@@ -65,9 +66,12 @@ export default function StudentPortalSection() {
                 <TextField label="Email address" type="email" required fullWidth autoComplete="email" />
                 <TextField label="Password" type="password" required fullWidth autoComplete="current-password" />
                 <Button variant="contained" size="large">Sign In</Button>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
-                  <Button variant="text" size="small" sx={{ px: 0 }}>Forgot password?</Button>
-                  <Button variant="text" size="small" sx={{ px: 0 }}>Activate new account</Button>
+                <Stack spacing={1}>
+                  <Button variant="text" size="small" sx={{ px: 0, alignSelf: 'flex-start' }}>Forgot password?</Button>
+                  <Alert severity="info" sx={{ borderRadius: 2 }}>
+                    Accounts are created by the Student Administrative Office. Contact admin-office@brillaracademy.edu to request
+                    access.
+                  </Alert>
                 </Stack>
               </Stack>
             </Paper>

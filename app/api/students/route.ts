@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createStudent, listStudents, fetchStudentById } from '@/lib/db';
 
+function resolveAdminToken(): string | null {
+  const configuredToken = process.env.ADMIN_API_TOKEN?.trim();
+  if (configuredToken && configuredToken.length > 0) {
+    return configuredToken;
+  }
+
+  // Provide a sensible default so local development and the demo experience work out of the box.
+  return 'development-admin-token';
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const idParam = searchParams.get('id');
@@ -21,6 +31,16 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const adminToken = request.headers.get('x-admin-token');
+  const expectedToken = resolveAdminToken();
+
+  if (!adminToken || !expectedToken || adminToken !== expectedToken) {
+    return NextResponse.json(
+      { error: 'You are not authorized to create student accounts.' },
+      { status: 401 }
+    );
+  }
+
   const payload = await request.json();
 
   const { firstName, lastName, email, password, role, primaryInterest } = payload ?? {};
