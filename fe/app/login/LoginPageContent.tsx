@@ -98,7 +98,7 @@ export default function LoginPageContent() {
     <Box
       sx={{
         minHeight: '100vh',
-        background: 'linear-gradient(180deg, #EFF6FF 0%, #F6F8FB 100%)',
+        background: '#F6F8FB',
         display: 'flex',
         alignItems: 'center',
         py: { xs: 8, md: 12 }
@@ -106,12 +106,12 @@ export default function LoginPageContent() {
     >
       <Container maxWidth="sm">
         <Paper
-          elevation={12}
+          elevation={0}
           sx={{
             p: { xs: 4, md: 6 },
-            borderRadius: 4,
-            background: 'rgba(255, 255, 255, 0.92)',
-            backdropFilter: 'blur(12px)'
+            border: '1px solid',
+            borderColor: 'rgba(0, 0, 0, 0.08)',
+            background: 'rgba(255, 255, 255, 0.98)'
           }}
         >
           <Stack spacing={3}>
@@ -141,7 +141,7 @@ export default function LoginPageContent() {
             </ToggleButtonGroup>
 
             {formState.status !== 'idle' && formState.status !== 'submitting' && (
-              <Alert severity="error" sx={{ borderRadius: 3 }}>
+              <Alert severity="error">
                 {formState.message}
               </Alert>
             )}

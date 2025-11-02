@@ -182,7 +182,7 @@ export default function AdminPortalPage() {
   };
 
   return (
-    <Box sx={{ minHeight: '100vh', background: 'linear-gradient(180deg, #EEF5FF 0%, #FFFFFF 100%)', py: { xs: 8, md: 12 } }}>
+    <Box sx={{ minHeight: '100vh', background: '#F5F7FB', py: { xs: 8, md: 12 } }}>
       <Container maxWidth="lg">
         <Stack spacing={6}>
           <Stack spacing={1} textAlign={{ xs: 'center', md: 'left' }}>
@@ -201,7 +201,7 @@ export default function AdminPortalPage() {
           <AdminRoleOverview roles={roleDefinitions} />
 
           {!authToken ? (
-            <Paper elevation={6} sx={{ borderRadius: 4, p: { xs: 4, md: 5 } }}>
+            <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)', p: { xs: 4, md: 5 } }}>
               <Stack spacing={3} component="form" onSubmit={handleAdminLogin}>
                 <Stack spacing={1}>
                   <Typography variant="h5" fontWeight={700}>
@@ -245,7 +245,7 @@ export default function AdminPortalPage() {
             </Paper>
           ) : (
             <Stack spacing={5}>
-              <Paper elevation={0} variant="outlined" sx={{ borderRadius: 4, p: { xs: 3, md: 4 } }}>
+              <Paper elevation={0} variant="outlined" sx={{ border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)', p: { xs: 3, md: 4 } }}>
                 <Stack spacing={1}>
                   <Typography variant="subtitle1" fontWeight={600}>
                     Signed in as {currentStaff?.displayName ?? 'Staff member'}
@@ -272,7 +272,7 @@ export default function AdminPortalPage() {
                 {canProvisionStaff ? (
                   <StaffProvisioningForm token={authToken} onStaffCreated={handleStaffCreated} createStaff={staffCreator} />
                 ) : (
-                  <Paper elevation={0} variant="outlined" sx={{ borderRadius: 4, p: { xs: 3, md: 4 } }}>
+                  <Paper elevation={0} variant="outlined" sx={{ border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)', p: { xs: 3, md: 4 } }}>
                     <Typography variant="body2" color="text.secondary">
                       Staff invitations are managed by IT administrators. Contact the IT admin team if you need to grant access
                       to another staff member.
@@ -280,7 +280,7 @@ export default function AdminPortalPage() {
                   </Paper>
                 )}
 
-                <Paper elevation={3} sx={{ borderRadius: 4, p: { xs: 3, md: 4 } }}>
+                <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)', p: { xs: 3, md: 4 } }}>
                   <Stack spacing={2}>
                     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'flex-start', sm: 'center' }}>
                       <Typography variant="h6" fontWeight={700}>
@@ -322,7 +322,7 @@ export default function AdminPortalPage() {
                 </Paper>
 
                 {canProvisionStaff && (
-                  <Paper elevation={3} sx={{ borderRadius: 4, p: { xs: 3, md: 4 } }}>
+                  <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)', p: { xs: 3, md: 4 } }}>
                     <Stack spacing={2}>
                       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'flex-start', sm: 'center' }}>
                         <Typography variant="h6" fontWeight={700}>

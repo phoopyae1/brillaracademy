@@ -24,28 +24,23 @@ export default function AdminRoleOverview({ roles }: Props) {
       {roles.map((role) => (
         <Grid item xs={12} md={4} key={role.title}>
           <Box
-            sx={(theme) => ({
-              borderRadius: 4,
+            sx={{
               p: { xs: 3, md: 4 },
               height: '100%',
-              background: `linear-gradient(145deg, ${alpha(theme.palette.background.paper, 0.95)}, ${alpha(theme.palette.primary.light, 0.25)})`,
-              border: `1px solid ${alpha(theme.palette.primary.main, 0.16)}`,
-              boxShadow: `0 24px 60px ${alpha(theme.palette.primary.main, 0.18)}`,
-              backdropFilter: 'blur(16px)',
+              background: 'rgba(255, 255, 255, 0.98)',
+              border: '1px solid',
+              borderColor: 'rgba(0, 0, 0, 0.08)',
               display: 'flex',
-            })}
+            }}
           >
             <Stack spacing={2} sx={{ width: '100%' }}>
               <Stack direction="row" spacing={1} alignItems="center">
                 <Chip
                   label={role.title}
                   color="primary"
-                  sx={(theme) => ({
+                  sx={{
                     fontWeight: 600,
-                    bgcolor: alpha(theme.palette.primary.main, 0.15),
-                    color: theme.palette.primary.dark,
-                    borderRadius: 999,
-                  })}
+                  }}
                 />
               </Stack>
               <Typography variant="body2" color="text.secondary">

@@ -21,18 +21,18 @@ export default function CreatePage() {
     <Box
       sx={{
         minHeight: '100vh',
-        background: 'linear-gradient(160deg, #FDF2FF 0%, #F5FBFF 100%)',
+        background: '#F5F7FB',
         py: { xs: 8, md: 12 }
       }}
     >
       <Container maxWidth="md">
         <Paper
-          elevation={10}
+          elevation={0}
           sx={{
             p: { xs: 4, md: 6 },
-            borderRadius: 4,
-            background: 'rgba(255, 255, 255, 0.94)',
-            backdropFilter: 'blur(16px)'
+            border: '1px solid',
+            borderColor: 'rgba(0, 0, 0, 0.08)',
+            background: 'rgba(255, 255, 255, 0.98)'
           }}
         >
           <Stack spacing={4}>

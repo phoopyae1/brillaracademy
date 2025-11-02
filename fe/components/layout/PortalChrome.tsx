@@ -43,7 +43,7 @@ export default function PortalChrome({ children }: PortalChromeProps) {
         minHeight: '100vh',
         display: 'flex',
         flexDirection: 'column',
-        background: 'linear-gradient(180deg, #F4F7FB 0%, #FFFFFF 35%, #F7FAFF 100%)'
+        background: '#F5F7FB'
       }}
     >
       <AppBar position="sticky" color="inherit" elevation={1} sx={{ backgroundColor: 'rgba(255,255,255,0.95)' }}>

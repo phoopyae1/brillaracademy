@@ -12,22 +12,20 @@ import MenuItem from '@mui/material/MenuItem';
 import FormControl from '@mui/material/FormControl';
 import Select from '@mui/material/Select';
 import Alert from '@mui/material/Alert';
-import { alpha } from '@mui/material/styles';
 
 export default function StudentPortalSection() {
   return (
     <Box
       component="section"
-      sx={(theme) => ({
-        width: '100%',
-        background: `linear-gradient(140deg, ${alpha(theme.palette.background.default, 0.85)}, ${alpha(theme.palette.primary.light, 0.28)})`,
-        borderRadius: 5,
-        border: `1px solid ${alpha(theme.palette.primary.main, 0.18)}`,
-        boxShadow: `0 45px 90px ${alpha(theme.palette.primary.main, 0.2)}`,
+      sx={{
+        maxWidth: '1200px',
+        background: 'rgba(255, 255, 255, 0.98)',
+        border: '1px solid',
+        borderColor: 'rgba(0, 0, 0, 0.08)',
         px: { xs: 3, md: 6 },
         py: { xs: 4, md: 6 },
-        backdropFilter: 'blur(22px)',
-      })}
+        mx: 'auto',
+      }}
     >
       <Stack spacing={4}>
         <Stack spacing={1} textAlign={{ xs: 'center', md: 'left' }}>
@@ -45,18 +43,16 @@ export default function StudentPortalSection() {
         <Grid container spacing={4}>
           <Grid item xs={12} md={5}>
             <Box
-              sx={(theme) => ({
+              sx={{
                 height: '100%',
-                borderRadius: 4,
                 p: { xs: 3, md: 4 },
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 3,
-                background: `linear-gradient(150deg, ${alpha(theme.palette.background.paper, 0.9)}, ${alpha(theme.palette.primary.light, 0.25)})`,
-                border: `1px solid ${alpha(theme.palette.primary.main, 0.16)}`,
-                boxShadow: `0 28px 60px ${alpha(theme.palette.primary.main, 0.18)}`,
-                backdropFilter: 'blur(18px)',
-              })}
+                background: 'rgba(255, 255, 255, 0.98)',
+                border: '1px solid',
+                borderColor: 'rgba(0, 0, 0, 0.08)',
+              }}
             >
               <Stack spacing={1}>
                 <Typography variant="h6">Student Login</Typography>
@@ -71,7 +67,7 @@ export default function StudentPortalSection() {
                 <Button variant="contained" size="large">Sign In</Button>
                 <Stack spacing={1}>
                   <Button variant="text" size="small" sx={{ px: 0, alignSelf: 'flex-start' }}>Forgot password?</Button>
-                  <Alert severity="info" sx={{ borderRadius: 2, bgcolor: 'transparent', border: `1px solid`, borderColor: 'primary.light' }}>
+                  <Alert severity="info" sx={{ bgcolor: 'transparent', border: `1px solid`, borderColor: 'primary.light' }}>
                     Accounts are created by the Student Administrative Office. Contact admin-office@brillaracademy.edu to request
                     access.
                   </Alert>
@@ -82,17 +78,15 @@ export default function StudentPortalSection() {
 
           <Grid item xs={12} md={7}>
             <Box
-              sx={(theme) => ({
-                borderRadius: 4,
+              sx={{
                 p: { xs: 3, md: 4 },
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 3,
-                background: `linear-gradient(150deg, ${alpha(theme.palette.background.paper, 0.9)}, ${alpha(theme.palette.secondary.light, 0.25)})`,
-                border: `1px solid ${alpha(theme.palette.secondary.main, 0.18)}`,
-                boxShadow: `0 28px 60px ${alpha(theme.palette.secondary.main, 0.18)}`,
-                backdropFilter: 'blur(18px)',
-              })}
+                background: 'rgba(255, 255, 255, 0.98)',
+                border: '1px solid',
+                borderColor: 'rgba(0, 0, 0, 0.08)',
+              }}
             >
               <Stack spacing={1}>
                 <Typography variant="h6">Quick Class Registration</Typography>

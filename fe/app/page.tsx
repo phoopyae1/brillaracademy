@@ -11,7 +11,7 @@ export default async function HomePage() {
     <Box
       sx={{
         minHeight: '100vh',
-        background: 'linear-gradient(180deg, #ECF4FF 0%, #F5F7FB 100%)',
+        background: '#F5F7FB',
         py: { xs: 6, md: 10 }
       }}
     >

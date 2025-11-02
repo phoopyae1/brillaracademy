@@ -39,18 +39,18 @@ export default function RegisterPage() {
     <Box
       sx={{
         minHeight: '100vh',
-        background: 'linear-gradient(180deg, #F4F7FF 0%, #FFFFFF 100%)',
+        background: '#F5F7FB',
         py: { xs: 8, md: 12 }
       }}
     >
       <Container maxWidth="md">
         <Paper
-          elevation={8}
+          elevation={0}
           sx={{
             p: { xs: 4, md: 6 },
-            borderRadius: 4,
-            background: 'rgba(255, 255, 255, 0.95)',
-            backdropFilter: 'blur(10px)'
+            border: '1px solid',
+            borderColor: 'rgba(0, 0, 0, 0.08)',
+            background: 'rgba(255, 255, 255, 0.98)'
           }}
         >
           <Stack spacing={4}>
@@ -75,7 +75,6 @@ export default function RegisterPage() {
                   <Paper
                     variant="outlined"
                     sx={{
-                      borderRadius: 3,
                       p: { xs: 3, md: 4 },
                       display: 'flex',
                       flexDirection: { xs: 'column', sm: 'row' },

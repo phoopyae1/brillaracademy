@@ -11,7 +11,6 @@ import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
 import Divider from '@mui/material/Divider';
 import Box from '@mui/material/Box';
-import { alpha } from '@mui/material/styles';
 
 import type { StaffAccount } from '@/lib/db';
 
@@ -59,14 +58,12 @@ export default function StaffProvisioningForm({ token, onStaffCreated, createSta
 
   return (
     <Box
-      sx={(theme) => ({
-        borderRadius: 5,
+      sx={{
         p: { xs: 4, md: 5 },
-        background: `linear-gradient(160deg, ${alpha(theme.palette.background.paper, 0.92)}, ${alpha(theme.palette.primary.light, 0.3)})`,
-        border: `1px solid ${alpha(theme.palette.primary.main, 0.18)}`,
-        boxShadow: `0 30px 60px ${alpha(theme.palette.primary.main, 0.22)}`,
-        backdropFilter: 'blur(18px)',
-      })}
+        background: 'rgba(255, 255, 255, 0.98)',
+        border: '1px solid',
+        borderColor: 'rgba(0, 0, 0, 0.08)',
+      }}
     >
       <Stack spacing={3} component="form" ref={formRef} onSubmit={handleSubmit}>
         <Stack spacing={1}>

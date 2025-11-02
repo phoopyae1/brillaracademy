@@ -323,7 +323,6 @@ export default function ForgePortalPage() {
             <Paper
               elevation={4}
               sx={{
-                borderRadius: 4,
                 p: { xs: 4, md: 5 },
                 maxWidth: 640,
                 mx: 'auto'
@@ -367,7 +366,7 @@ export default function ForgePortalPage() {
           )}
 
           {session && (
-            <Paper elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+            <Paper elevation={0} sx={{  border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
               <Stack spacing={2}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'flex-start', sm: 'center' }}>
                   <Box>
@@ -517,7 +516,7 @@ function TeacherWorkspace({ dashboard, loading, onRecordGrade }: TeacherWorkspac
 
   return (
     <Stack spacing={4}>
-      <Paper elevation={3} sx={{ borderRadius: 4, p: { xs: 3, md: 4 } }}>
+      <Paper elevation={3} sx={{  p: { xs: 3, md: 4 } }}>
         <Stack spacing={2}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
             <Box>
@@ -534,7 +533,7 @@ function TeacherWorkspace({ dashboard, loading, onRecordGrade }: TeacherWorkspac
           <Grid container spacing={2}>
             {(dashboard?.schedule ?? []).map((slot) => (
               <Grid key={slot.assignmentId} item xs={12} md={6} lg={4}>
-                <Paper variant="outlined" sx={{ borderRadius: 3, p: 2.5, height: '100%' }}>
+                <Paper variant="outlined" sx={{  p: 2.5, height: '100%' }}>
                   <Stack spacing={1.5}>
                     <Stack direction="row" spacing={1} alignItems="center">
                       <Chip label={slot.weekday} color="primary" size="small" sx={{ fontWeight: 600 }} />
@@ -568,7 +567,7 @@ function TeacherWorkspace({ dashboard, loading, onRecordGrade }: TeacherWorkspac
 
       <Grid container spacing={4}>
         <Grid item xs={12} lg={6}>
-          <Paper elevation={0} sx={{ borderRadius: 4, border: '1px dashed', borderColor: 'divider', p: { xs: 3, md: 4 }, height: '100%' }}>
+          <Paper elevation={0} sx={{  border: '1px dashed', borderColor: 'divider', p: { xs: 3, md: 4 }, height: '100%' }}>
             <Stack spacing={2.5}>
               <Box>
                 <Typography variant="h6" fontWeight={700}>
@@ -665,7 +664,7 @@ function TeacherWorkspace({ dashboard, loading, onRecordGrade }: TeacherWorkspac
         </Grid>
 
         <Grid item xs={12} lg={6}>
-          <Paper elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 }, height: '100%' }}>
+          <Paper elevation={0} sx={{  border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 }, height: '100%' }}>
             <Stack spacing={2} sx={{ height: '100%' }}>
               <Box>
                 <Typography variant="h6" fontWeight={700}>
@@ -717,7 +716,7 @@ function TeacherWorkspace({ dashboard, loading, onRecordGrade }: TeacherWorkspac
         </Grid>
       </Grid>
 
-      <Paper elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+      <Paper elevation={0} sx={{  border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
         <Stack spacing={2}>
           <Box>
             <Typography variant="h6" fontWeight={700}>
@@ -849,7 +848,7 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, onCreate
 
   return (
     <Stack spacing={4}>
-      <Paper elevation={3} sx={{ borderRadius: 4, p: { xs: 3, md: 4 } }}>
+      <Paper elevation={3} sx={{  p: { xs: 3, md: 4 } }}>
         <Stack spacing={2.5} component="form" onSubmit={handleSubmit} noValidate>
           <Box>
             <Typography variant="h5" fontWeight={700}>
@@ -976,7 +975,7 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, onCreate
         </Stack>
       </Paper>
 
-      <Paper elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+      <Paper elevation={0} sx={{  border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
         <Stack spacing={2}>
           <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
             <Box>
@@ -1105,7 +1104,7 @@ function StudentAdminWorkspace({ loading, payments, students, onRecordPayment }:
 
   return (
     <Stack spacing={4}>
-      <Paper elevation={3} sx={{ borderRadius: 4, p: { xs: 3, md: 4 } }}>
+      <Paper elevation={3} sx={{  p: { xs: 3, md: 4 } }}>
         <Stack spacing={2.5} component="form" onSubmit={handleSubmit} noValidate>
           <Box>
             <Typography variant="h5" fontWeight={700}>
@@ -1198,7 +1197,7 @@ function StudentAdminWorkspace({ loading, payments, students, onRecordPayment }:
         </Stack>
       </Paper>
 
-      <Paper elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+      <Paper elevation={0} sx={{  border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
         <Stack spacing={2}>
           <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
             <Box>

@@ -29,13 +29,13 @@ const theme = createTheme({
     }
   },
   shape: {
-    borderRadius: 16
+    borderRadius: 5
   },
   components: {
     MuiCard: {
       styleOverrides: {
         root: {
-          boxShadow: '0 12px 30px rgba(30, 136, 229, 0.08)'
+          boxShadow: 'none'
         }
       }
     },

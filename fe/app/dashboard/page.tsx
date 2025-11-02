@@ -66,9 +66,9 @@ export default async function DashboardPage() {
 
   if (!dashboard) {
     return (
-      <Box sx={{ minHeight: '100vh', background: 'linear-gradient(180deg, #F5F7FB 0%, #FFFFFF 100%)', py: { xs: 6, md: 10 } }}>
+      <Box sx={{ minHeight: '100vh', background: '#F5F7FB', py: { xs: 6, md: 10 } }}>
         <Container maxWidth="md">
-          <Paper elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider', p: { xs: 4, md: 6 }, textAlign: 'center' }}>
+          <Paper elevation={0} sx={{  border: '1px solid', borderColor: 'divider', p: { xs: 4, md: 6 }, textAlign: 'center' }}>
             <Typography variant="h4" fontWeight={700} gutterBottom>
               We could not find that dashboard
             </Typography>
@@ -129,23 +129,22 @@ export default async function DashboardPage() {
     <Box
       sx={{
         minHeight: '100vh',
-        background: 'radial-gradient(circle at top, rgba(231, 238, 255, 0.9) 0%, rgba(246, 246, 252, 0.95) 45%, #ffffff 100%)',
-        py: { xs: 5, md: 8 }
+        background: '#F5F7FB',
+        py: { xs: 5, md: 8 },
+        px: { xs: 2, md: 3 }
       }}
     >
-      <Container maxWidth="xl">
+      <Container maxWidth="lg">
         <Grid container spacing={4}>
           <Grid item xs={12} md={3} lg={3}>
             <Paper
               elevation={0}
               sx={{
-                borderRadius: 5,
                 p: 3,
                 height: '100%',
-                background: 'linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(242, 245, 255, 0.92) 100%)',
+                background: 'rgba(255, 255, 255, 0.98)',
                 border: '1px solid',
                 borderColor: 'rgba(255,255,255,0.6)',
-                boxShadow: '0px 16px 48px rgba(86, 115, 204, 0.08)'
               }}
             >
               <Stack spacing={4}>
@@ -168,7 +167,6 @@ export default async function DashboardPage() {
                       selected={index === 0}
                       sx={{
                         mb: 1.5,
-                        borderRadius: 3,
                         backgroundColor: index === 0 ? 'rgba(99, 102, 241, 0.14)' : 'transparent',
                         '&.Mui-selected:hover': {
                           backgroundColor: 'rgba(99, 102, 241, 0.24)'
@@ -189,9 +187,8 @@ export default async function DashboardPage() {
                 <Paper
                   variant="outlined"
                   sx={{
-                    borderRadius: 4,
                     p: 3,
-                    background: 'linear-gradient(135deg, rgba(129, 140, 248, 0.16) 0%, rgba(192, 132, 252, 0.18) 100%)',
+                    background: 'rgba(255, 255, 255, 0.98)',
                     borderColor: 'rgba(120, 113, 198, 0.3)'
                   }}
                 >
@@ -214,11 +211,9 @@ export default async function DashboardPage() {
               <Paper
                 elevation={0}
                 sx={{
-                  borderRadius: 5,
                   p: { xs: 3, sm: 4 },
-                  background: 'linear-gradient(135deg, rgba(236, 233, 254, 0.85) 0%, rgba(222, 242, 255, 0.9) 45%, rgba(255, 255, 255, 0.95) 100%)',
+                  background: 'rgba(255, 255, 255, 0.98)',
                   border: '1px solid rgba(255,255,255,0.7)',
-                  boxShadow: '0px 20px 60px rgba(93, 107, 207, 0.12)'
                 }}
               >
                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={3} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between">
@@ -255,7 +250,6 @@ export default async function DashboardPage() {
                           </InputAdornment>
                         ),
                         sx: {
-                          borderRadius: 3,
                           backgroundColor: 'rgba(255,255,255,0.9)',
                           '& fieldset': { border: 'none' }
                         }
@@ -266,7 +260,6 @@ export default async function DashboardPage() {
                       <IconButton
                         sx={{
                           backgroundColor: 'rgba(255,255,255,0.9)',
-                          boxShadow: '0 8px 24px rgba(99, 102, 241, 0.18)',
                           '&:hover': { backgroundColor: 'rgba(255,255,255,1)' }
                         }}
                       >
@@ -295,10 +288,9 @@ export default async function DashboardPage() {
                   <Paper
                     elevation={0}
                     sx={{
-                      borderRadius: 4,
                       p: 3,
                       height: '100%',
-                      background: 'linear-gradient(150deg, rgba(99, 102, 241, 0.14) 0%, rgba(79, 70, 229, 0.08) 100%)',
+                      background: 'rgba(255, 255, 255, 0.98)',
                       border: '1px solid rgba(99,102,241,0.18)'
                     }}
                   >
@@ -322,10 +314,9 @@ export default async function DashboardPage() {
                   <Paper
                     elevation={0}
                     sx={{
-                      borderRadius: 4,
                       p: 3,
                       height: '100%',
-                      background: 'linear-gradient(150deg, rgba(56, 189, 248, 0.16) 0%, rgba(129, 140, 248, 0.12) 100%)',
+                      background: 'rgba(255, 255, 255, 0.98)',
                       border: '1px solid rgba(56,189,248,0.2)'
                     }}
                   >
@@ -349,10 +340,9 @@ export default async function DashboardPage() {
                   <Paper
                     elevation={0}
                     sx={{
-                      borderRadius: 4,
                       p: 3,
                       height: '100%',
-                      background: 'linear-gradient(150deg, rgba(244, 114, 182, 0.14) 0%, rgba(251, 191, 36, 0.12) 100%)',
+                      background: 'rgba(255, 255, 255, 0.98)',
                       border: '1px solid rgba(244,114,182,0.18)'
                     }}
                   >
@@ -379,7 +369,7 @@ export default async function DashboardPage() {
               <Grid container spacing={3}>
                 <Grid item xs={12} md={8}>
                   <Stack spacing={3}>
-                    <Paper elevation={0} sx={{ borderRadius: 4, p: 3, backgroundColor: '#ffffff', boxShadow: '0px 12px 36px rgba(15, 23, 42, 0.04)' }}>
+                    <Paper elevation={0} sx={{  p: 3, backgroundColor: '#ffffff', border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)' }}>
                       <Stack spacing={2}>
                         <Stack direction="row" justifyContent="space-between" alignItems="center">
                           <Typography variant="h6" fontWeight={700}>
@@ -425,7 +415,7 @@ export default async function DashboardPage() {
                       </Stack>
                     </Paper>
 
-                    <Paper elevation={0} sx={{ borderRadius: 4, p: 3, backgroundColor: '#ffffff', boxShadow: '0px 12px 36px rgba(15, 23, 42, 0.04)' }}>
+                    <Paper elevation={0} sx={{  p: 3, backgroundColor: '#ffffff', border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)' }}>
                       <Stack spacing={2}>
                         <Stack direction="row" justifyContent="space-between" alignItems="center">
                           <Typography variant="h6" fontWeight={700}>
@@ -438,7 +428,7 @@ export default async function DashboardPage() {
                         </Typography>
                         <Stack spacing={2}>
                           {scheduleHighlights.map((item) => (
-                            <Paper key={item.id} variant="outlined" sx={{ borderRadius: 3, p: 2.5, borderColor: 'rgba(79,70,229,0.18)' }}>
+                            <Paper key={item.id} variant="outlined" sx={{  p: 2.5, borderColor: 'rgba(79,70,229,0.18)' }}>
                               <Stack spacing={1}>
                                 <Typography variant="subtitle1" fontWeight={600}>
                                   {item.title}
@@ -467,7 +457,7 @@ export default async function DashboardPage() {
 
                 <Grid item xs={12} md={4}>
                   <Stack spacing={3}>
-                    <Paper elevation={0} sx={{ borderRadius: 4, p: 3, backgroundColor: '#ffffff', boxShadow: '0px 12px 36px rgba(15, 23, 42, 0.04)' }}>
+                    <Paper elevation={0} sx={{  p: 3, backgroundColor: '#ffffff', border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)' }}>
                       <Stack spacing={2}>
                         <Stack direction="row" justifyContent="space-between" alignItems="center">
                           <Typography variant="h6" fontWeight={700}>
@@ -497,7 +487,7 @@ export default async function DashboardPage() {
                       </Stack>
                     </Paper>
 
-                    <Paper elevation={0} sx={{ borderRadius: 4, p: 3, backgroundColor: '#ffffff', boxShadow: '0px 12px 36px rgba(15, 23, 42, 0.04)' }}>
+                    <Paper elevation={0} sx={{  p: 3, backgroundColor: '#ffffff', border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)' }}>
                       <Stack spacing={2}>
                         <Stack direction="row" justifyContent="space-between" alignItems="center">
                           <Typography variant="h6" fontWeight={700}>
@@ -519,7 +509,7 @@ export default async function DashboardPage() {
                       </Stack>
                     </Paper>
 
-                    <Paper elevation={0} sx={{ borderRadius: 4, p: 3, backgroundColor: '#ffffff', boxShadow: '0px 12px 36px rgba(15, 23, 42, 0.04)' }}>
+                    <Paper elevation={0} sx={{  p: 3, backgroundColor: '#ffffff', border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)' }}>
                       <Stack spacing={2}>
                         <Typography variant="h6" fontWeight={700}>
                           GPA snapshots
@@ -543,7 +533,7 @@ export default async function DashboardPage() {
 
               <Grid container spacing={3}>
                 <Grid item xs={12} md={7}>
-                  <Paper elevation={0} sx={{ borderRadius: 4, p: 3, backgroundColor: '#ffffff', boxShadow: '0px 16px 40px rgba(15, 23, 42, 0.06)' }}>
+                  <Paper elevation={0} sx={{  p: 3, backgroundColor: '#ffffff', border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)' }}>
                     <Stack spacing={2}>
                       <Typography variant="h6" fontWeight={700}>
                         Class registrations
@@ -594,7 +584,7 @@ export default async function DashboardPage() {
 
                 <Grid item xs={12} md={5}>
                   <Stack spacing={3}>
-                    <Paper elevation={0} sx={{ borderRadius: 4, p: 3, backgroundColor: '#ffffff', boxShadow: '0px 16px 40px rgba(15, 23, 42, 0.06)' }}>
+                    <Paper elevation={0} sx={{  p: 3, backgroundColor: '#ffffff', border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)' }}>
                       <Stack spacing={2}>
                         <Typography variant="h6" fontWeight={700}>
                           Grade summary
@@ -620,7 +610,7 @@ export default async function DashboardPage() {
                       </Stack>
                     </Paper>
 
-                    <Paper elevation={0} sx={{ borderRadius: 4, p: 3, backgroundColor: '#ffffff', boxShadow: '0px 16px 40px rgba(15, 23, 42, 0.06)' }}>
+                    <Paper elevation={0} sx={{  p: 3, backgroundColor: '#ffffff', border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)' }}>
                       <Stack spacing={2}>
                         <Typography variant="h6" fontWeight={700}>
                           Registration windows
