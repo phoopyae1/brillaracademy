@@ -11,16 +11,14 @@ import TableCell from '@mui/material/TableCell';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
 import Chip from '@mui/material/Chip';
-import { fetchStudentDashboard, listStudents } from '@/lib/db';
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
+import { fetchStudentDashboard } from '@/lib/db';
 
 export const metadata = {
   title: 'Student Dashboard | Brillar Academy',
   description: 'Review your personal timetable, upcoming milestones, and active class registrations.'
 };
-
-interface DashboardPageProps {
-  searchParams?: Record<string, string | string[]>;
-}
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat('en-US', {
@@ -33,18 +31,16 @@ function formatCurrency(value: number) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
 }
 
-export default async function DashboardPage({ searchParams }: DashboardPageProps) {
-  const searchId = searchParams?.studentId;
-  const parsedId = Array.isArray(searchId) ? Number(searchId[0]) : Number(searchId);
+export default async function DashboardPage() {
+  const cookieStore = cookies();
+  const studentIdCookie = cookieStore.get('brillar_student_id');
+  const parsedId = Number(studentIdCookie?.value);
 
-  let dashboard = await fetchStudentDashboard(Number.isFinite(parsedId) ? parsedId : NaN);
-
-  if (!dashboard) {
-    const students = await listStudents();
-    if (students.length) {
-      dashboard = await fetchStudentDashboard(students[0].id);
-    }
+  if (!studentIdCookie || !Number.isFinite(parsedId)) {
+    redirect('/login');
   }
+
+  const dashboard = await fetchStudentDashboard(parsedId);
 
   if (!dashboard) {
     return (

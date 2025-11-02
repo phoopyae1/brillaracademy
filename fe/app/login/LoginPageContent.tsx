@@ -60,7 +60,17 @@ export default function LoginPageContent() {
           throw new Error('Invalid credentials or missing student profile.');
         }
 
-        router.push(`/dashboard?studentId=${student.id}`);
+        const fullName = [student.firstName, student.lastName].filter(Boolean).join(' ');
+        const maxAgeSeconds = 60 * 60 * 24; // 24 hours
+
+        document.cookie = `brillar_student_id=${student.id}; path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax`;
+
+        if (fullName) {
+          document.cookie = `brillar_student_name=${encodeURIComponent(fullName)}; path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax`;
+        }
+
+        router.push('/dashboard');
+        router.refresh();
         return;
       }
 
