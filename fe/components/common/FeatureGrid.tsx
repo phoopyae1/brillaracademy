@@ -1,11 +1,11 @@
 'use client';
 
 import Grid from '@mui/material/Grid';
-import Card from '@mui/material/Card';
-import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import Stack from '@mui/material/Stack';
 import Avatar from '@mui/material/Avatar';
+import Box from '@mui/material/Box';
+import { alpha } from '@mui/material/styles';
 import { SvgIconComponent } from '@mui/icons-material';
 import ShieldIcon from '@mui/icons-material/Shield';
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -50,22 +50,47 @@ export default function FeatureGrid({ features }: Props) {
 
         return (
           <Grid item xs={12} md={6} lg={4} key={feature.id}>
-            <Card sx={{ height: '100%', backdropFilter: 'blur(6px)' }}>
-              <CardContent>
-                <Stack direction="row" spacing={2} alignItems="center" mb={2}>
-                  <Avatar sx={{ bgcolor: 'primary.main', width: 48, height: 48 }}>
-                    <Icon />
-                  </Avatar>
-                  <Stack spacing={0.5}>
-                    <Typography variant="overline" sx={{ color: 'primary.main', letterSpacing: 1 }}>
-                      {feature.category}
-                    </Typography>
-                    <Typography variant="h5">{feature.name}</Typography>
-                  </Stack>
+            <Box
+              sx={(theme) => ({
+                height: '100%',
+                borderRadius: 4,
+                p: { xs: 3, md: 4 },
+                background: `linear-gradient(135deg, ${alpha(theme.palette.background.paper, 0.9)}, ${alpha(theme.palette.primary.light, 0.3)})`,
+                border: `1px solid ${alpha(theme.palette.primary.main, 0.18)}`,
+                boxShadow: `0 22px 50px ${alpha(theme.palette.primary.main, 0.2)}`,
+                backdropFilter: 'blur(18px)',
+                transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
+                '&:hover': {
+                  transform: 'translateY(-8px)',
+                  boxShadow: `0 32px 70px ${alpha(theme.palette.primary.main, 0.28)}`,
+                },
+              })}
+            >
+              <Stack direction="row" spacing={2} alignItems="center">
+                <Avatar
+                  sx={(theme) => ({
+                    bgcolor: alpha(theme.palette.primary.main, 0.18),
+                    color: theme.palette.primary.dark,
+                    width: 56,
+                    height: 56,
+                    backdropFilter: 'blur(10px)',
+                    border: `1px solid ${alpha(theme.palette.primary.main, 0.22)}`,
+                  })}
+                >
+                  <Icon />
+                </Avatar>
+                <Stack spacing={0.5}>
+                  <Typography variant="overline" sx={{ color: 'primary.main', letterSpacing: 1 }}>
+                    {feature.category}
+                  </Typography>
+                  <Typography variant="h5">{feature.name}</Typography>
                 </Stack>
-                <Typography variant="body1">{feature.description}</Typography>
-              </CardContent>
-            </Card>
+              </Stack>
+              <Typography variant="body1">{feature.description}</Typography>
+            </Box>
           </Grid>
         );
       })}
