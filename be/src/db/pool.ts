@@ -14,7 +14,7 @@ export function getPool(): Pool | null {
   }
 
   pool = new Pool({ connectionString });
-  pool.on('error', (error) => {
+  pool.on('error', (error: Error) => {
     console.error('Unexpected database error', error);
   });
 
