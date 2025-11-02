@@ -71,3 +71,26 @@ SET student_id = EXCLUDED.student_id,
     instructor = EXCLUDED.instructor,
     status = EXCLUDED.status,
     registered_at = EXCLUDED.registered_at;
+
+INSERT INTO classrooms (id, name, location, capacity, resources, created_by, created_at)
+VALUES
+    (1, 'Innovation Hub 201', 'North Campus - Building B', 28, '["Interactive Whiteboard", "3D Printer", "Video Conferencing"]', 1, '2024-08-05T09:00:00Z'),
+    (2, 'Wellness Studio 3A', 'South Campus - Health Center', 22, '["Yoga Mats", "Projection System"]', 1, '2024-08-06T11:30:00Z'),
+    (3, 'Analytics Lab 410', 'Main Campus - Tech Tower', 32, '["High-Performance Workstations", "Data Wall"]', 1, '2024-08-07T14:15:00Z')
+ON CONFLICT (id) DO UPDATE
+SET name = EXCLUDED.name,
+    location = EXCLUDED.location,
+    capacity = EXCLUDED.capacity,
+    resources = EXCLUDED.resources,
+    created_by = EXCLUDED.created_by,
+    created_at = EXCLUDED.created_at;
+
+INSERT INTO classroom_registrations (id, classroom_id, student_id, status, registered_at)
+VALUES
+    (1, 1, 1, 'enrolled', '2024-08-22T15:30:00Z'),
+    (2, 3, 2, 'enrolled', '2024-08-23T10:15:00Z')
+ON CONFLICT (id) DO UPDATE
+SET classroom_id = EXCLUDED.classroom_id,
+    student_id = EXCLUDED.student_id,
+    status = EXCLUDED.status,
+    registered_at = EXCLUDED.registered_at;

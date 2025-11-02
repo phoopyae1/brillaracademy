@@ -45,6 +45,25 @@ CREATE TABLE IF NOT EXISTS class_registrations (
     registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS classrooms (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    location TEXT NOT NULL,
+    capacity INTEGER NOT NULL CHECK (capacity > 0),
+    resources JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_by INTEGER REFERENCES staff_accounts(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS classroom_registrations (
+    id SERIAL PRIMARY KEY,
+    classroom_id INTEGER NOT NULL REFERENCES classrooms(id) ON DELETE CASCADE,
+    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'enrolled',
+    registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (classroom_id, student_id)
+);
+
 CREATE TABLE IF NOT EXISTS staff_accounts (
     id SERIAL PRIMARY KEY,
     display_name TEXT NOT NULL,
