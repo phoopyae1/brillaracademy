@@ -15,6 +15,14 @@ import type {
   StudentDashboardData,
   TimetableEntry
 } from './types.js';
+import { listExamAnnouncements } from './examService.js';
+import {
+  listStudentGrades,
+  listStudentSemesterGpa,
+  listRegistrationWindows,
+  findCourseOffering
+} from './academicService.js';
+import { listStudentFeePayments } from './financeService.js';
 
 let inMemoryStudents = [...fallbackStudents];
 let inMemoryTimetables = [...fallbackTimetables];
@@ -24,6 +32,7 @@ let inMemorySecrets = new Map<number, string>(
   fallbackStudents.map((student) => [student.id, seededPasswordHash])
 );
 let nextStudentId = fallbackStudents.length + 1;
+let nextRegistrationId = fallbackRegistrations.length + 1;
 
 function normalizeStudent(row: any): Student {
   return {
@@ -170,11 +179,27 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       return null;
     }
 
+    const [grades, exams, gpaBySemester, registrationWindows, fees] = await Promise.all([
+      listStudentGrades(studentId),
+      listExamAnnouncements(),
+      listStudentSemesterGpa(studentId),
+      listRegistrationWindows(),
+      listStudentFeePayments(studentId)
+    ]);
+    const upcomingExams = exams
+      .filter((exam) => new Date(exam.examDate).getTime() >= Date.now())
+      .sort((a, b) => new Date(a.examDate).getTime() - new Date(b.examDate).getTime());
+
     return {
       student,
       timetable: inMemoryTimetables.filter((entry) => entry.studentId === studentId),
       schedule: inMemorySchedules.filter((entry) => entry.studentId === studentId),
-      registrations: inMemoryRegistrations.filter((entry) => entry.studentId === studentId)
+      registrations: inMemoryRegistrations.filter((entry) => entry.studentId === studentId),
+      grades,
+      upcomingExams,
+      gpaBySemester,
+      registrationWindows,
+      fees
     };
   }
 
@@ -214,14 +239,100 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       )
     ]);
 
+    const [grades, exams, gpaBySemester, registrationWindows, fees] = await Promise.all([
+      listStudentGrades(studentId),
+      listExamAnnouncements(),
+      listStudentSemesterGpa(studentId),
+      listRegistrationWindows(),
+      listStudentFeePayments(studentId)
+    ]);
+    const upcomingExams = exams
+      .filter((exam) => new Date(exam.examDate).getTime() >= Date.now())
+      .sort((a, b) => new Date(a.examDate).getTime() - new Date(b.examDate).getTime());
+
     return {
       student,
       timetable: timetableResult.rows,
       schedule: scheduleResult.rows,
-      registrations: registrationsResult.rows
+      registrations: registrationsResult.rows,
+      grades,
+      upcomingExams,
+      gpaBySemester,
+      registrationWindows,
+      fees
     };
   } catch (error) {
     console.error('Failed to fetch student dashboard', error);
     return null;
+  }
+}
+
+export async function registerStudentForSemesterCourse(
+  studentId: number,
+  semester: string,
+  courseCode: string
+): Promise<ClassRegistration> {
+  if (!Number.isFinite(studentId)) {
+    throw new Error('Invalid student.');
+  }
+
+  const offering = findCourseOffering(semester, courseCode);
+
+  if (!offering) {
+    throw new Error('Course is not available for the requested semester.');
+  }
+
+  if (offering.window.status !== 'open') {
+    throw new Error('Registration for this semester is not open.');
+  }
+
+  const alreadyRegistered = inMemoryRegistrations.some(
+    (registration) =>
+      registration.studentId === studentId &&
+      registration.semester === offering.window.semester &&
+      registration.className === offering.course.courseTitle
+  );
+
+  if (alreadyRegistered) {
+    throw new Error('Student is already registered for this course.');
+  }
+
+  const pool = getPool();
+
+  if (!pool) {
+    const registration: ClassRegistration = {
+      id: nextRegistrationId++,
+      studentId,
+      className: offering.course.courseTitle,
+      instructor: offering.course.instructor,
+      status: 'registered',
+      registeredAt: new Date().toISOString(),
+      semester: offering.window.semester
+    };
+
+    inMemoryRegistrations = [registration, ...inMemoryRegistrations];
+    return registration;
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO class_registrations (student_id, class_name, instructor, status, semester)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, student_id AS "studentId", class_name AS "className", instructor, status,
+                 to_char(registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "registeredAt",
+                 semester`,
+      [studentId, offering.course.courseTitle, offering.course.instructor, 'registered', offering.window.semester]
+    );
+
+    const [registration] = rows as unknown as ClassRegistration[];
+    return registration;
+  } catch (error: any) {
+    const duplicate = error?.code === '23505';
+    if (duplicate) {
+      throw new Error('Student is already registered for this course.');
+    }
+
+    console.error('Failed to register student for course', error);
+    throw new Error('Unable to register for the selected course right now.');
   }
 }

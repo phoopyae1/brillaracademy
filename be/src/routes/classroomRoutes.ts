@@ -1,0 +1,36 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import { requireStaff, type AuthenticatedRequest } from '../middleware/requireStaff.js';
+import { createClassroom, listClassrooms } from '../services/classroomService.js';
+
+const router = Router();
+
+router.get('/', requireStaff(['IT_ADMIN']), async (_req, res) => {
+  const classrooms = await listClassrooms();
+  res.json({ classrooms });
+});
+
+const createClassroomSchema = z.object({
+  name: z.string().min(1),
+  location: z.string().min(1),
+  capacity: z.coerce.number().int().positive(),
+  resources: z.array(z.string().min(1)).optional()
+});
+
+router.post('/', requireStaff(['IT_ADMIN']), async (req: AuthenticatedRequest, res) => {
+  const parseResult = createClassroomSchema.safeParse(req.body);
+
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid classroom payload.', details: parseResult.error.flatten() });
+  }
+
+  try {
+    const classroom = await createClassroom(parseResult.data, req.staff?.id);
+    res.status(201).json({ classroom });
+  } catch (error: any) {
+    console.error('Failed to create classroom', error);
+    res.status(500).json({ error: 'Unable to create classroom right now.' });
+  }
+});
+
+export default router;

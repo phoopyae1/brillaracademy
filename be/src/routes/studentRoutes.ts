@@ -5,7 +5,8 @@ import {
   createStudent,
   fetchStudentById,
   fetchStudentDashboard,
-  listStudents
+  listStudents,
+  registerStudentForSemesterCourse
 } from '../services/studentService.js';
 
 const router = Router();
@@ -37,6 +38,11 @@ const createStudentSchema = z.object({
   password: z.string().min(6),
   role: z.string().optional(),
   primaryInterest: z.string().optional().nullable()
+});
+
+const registerForCourseSchema = z.object({
+  semester: z.string().min(1),
+  courseCode: z.string().min(1)
 });
 
 router.post('/', requireStaff(['IT_ADMIN', 'STUDENT_ADMIN']), async (req, res) => {
@@ -77,6 +83,33 @@ router.get('/:id', requireStaff(), async (req, res) => {
   }
 
   return res.json({ student });
+});
+
+router.post('/:id/registrations', async (req, res) => {
+  const studentId = Number(req.params.id);
+
+  if (!Number.isFinite(studentId)) {
+    return res.status(400).json({ error: 'Invalid student id.' });
+  }
+
+  const parseResult = registerForCourseSchema.safeParse(req.body);
+
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid registration payload.', details: parseResult.error.flatten() });
+  }
+
+  try {
+    const registration = await registerStudentForSemesterCourse(
+      studentId,
+      parseResult.data.semester,
+      parseResult.data.courseCode
+    );
+
+    return res.status(201).json({ registration });
+  } catch (error: any) {
+    const message = typeof error?.message === 'string' ? error.message : 'Unable to register for this course.';
+    return res.status(400).json({ error: message });
+  }
 });
 
 export default router;
