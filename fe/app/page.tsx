@@ -3,16 +3,10 @@ import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
-import Divider from '@mui/material/Divider';
-import FeatureGrid from '@/components/common/FeatureGrid';
-import StudentPortalSection from '@/components/student/StudentPortal';
-import { fetchFeatures } from '@/lib/db';
 
 export const revalidate = 60;
 
 export default async function HomePage() {
-  const features = await fetchFeatures();
-
   return (
     <Box
       sx={{
@@ -43,12 +37,6 @@ export default async function HomePage() {
               </Button>
             </Stack>
           </Stack>
-
-          <FeatureGrid features={features} />
-
-          <Divider sx={{ borderStyle: 'dashed' }} />
-
-          <StudentPortalSection />
         </Stack>
       </Container>
     </Box>
