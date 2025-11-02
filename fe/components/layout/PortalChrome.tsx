@@ -32,9 +32,9 @@ export default function PortalChrome({ children }: PortalChromeProps) {
 
   const navLinks = [
     { label: 'Home', href: '/' },
-    ...(isStudentLoggedIn ? [{ label: 'Student Dashboard', href: '/dashboard' }] : []),
+    ...(isStudentLoggedIn ? [{ label: 'Student Portal', href: '/student-portal' }] : []),
     { label: 'Forge Staff Portal', href: '/forge' },
-    { label: 'Provisioning Suite', href: '/admin' }
+    { label: 'Provisioning Suite', href: '/admin/' }
   ];
 
   return (

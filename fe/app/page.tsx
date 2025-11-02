@@ -32,7 +32,7 @@ export default async function HomePage() {
               <Button variant="contained" size="large" href="/login">
                 Student login
               </Button>
-              <Button variant="outlined" size="large" href="/admin">
+              <Button variant="outlined" size="large" href="/admin/">
                 Admin portal
               </Button>
             </Stack>
