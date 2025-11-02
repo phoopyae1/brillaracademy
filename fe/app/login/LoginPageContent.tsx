@@ -14,16 +14,30 @@ import Divider from '@mui/material/Divider';
 import Stack from '@mui/material/Stack';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
-import { authenticateStudent } from '@/lib/db';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import ToggleButton from '@mui/material/ToggleButton';
+import { authenticateStudent, adminLogin } from '@/lib/db';
 
 type FormState = {
   status: 'idle' | 'submitting' | 'error';
   message: string;
 };
 
+type LoginMode = 'student' | 'staff';
+
 export default function LoginPageContent() {
   const router = useRouter();
   const [formState, setFormState] = useState<FormState>({ status: 'idle', message: '' });
+  const [loginMode, setLoginMode] = useState<LoginMode>('student');
+
+  const handleModeChange = (_event: unknown, value: LoginMode | null) => {
+    if (!value) {
+      return;
+    }
+
+    setLoginMode(value);
+    setFormState({ status: 'idle', message: '' });
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -39,17 +53,35 @@ export default function LoginPageContent() {
     }
 
     try {
-      const student = await authenticateStudent(email, password);
+      if (loginMode === 'student') {
+        const student = await authenticateStudent(email, password);
 
-      if (!student?.id) {
-        throw new Error('Invalid credentials or missing student profile.');
+        if (!student?.id) {
+          throw new Error('Invalid credentials or missing student profile.');
+        }
+
+        router.push(`/dashboard?studentId=${student.id}`);
+        return;
       }
 
-      router.push(`/dashboard?studentId=${student.id}`);
+      const staffSession = await adminLogin(email, password);
+
+      if (!staffSession) {
+        throw new Error('Invalid staff credentials or insufficient permissions.');
+      }
+
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem('brillar_staff_session', JSON.stringify(staffSession));
+      }
+
+      router.push('/forge');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unexpected error during login.';
       setFormState({ status: 'error', message });
+      return;
     }
+
+    setFormState({ status: 'idle', message: '' });
   };
 
   return (
@@ -73,17 +105,35 @@ export default function LoginPageContent() {
           }}
         >
           <Stack spacing={3}>
-            <Box>
+            <Box textAlign="center">
               <Typography variant="h4" fontWeight={700} gutterBottom>
                 Welcome back 👋
               </Typography>
               <Typography color="text.secondary">
-                Sign in to continue exploring curated lessons, assignments, and your personalized learning dashboard.
+                Sign in to continue exploring curated lessons, assignments, and your personalized learning dashboard. Staff can
+                access the Forge portal to manage academic operations.
               </Typography>
             </Box>
 
+            <ToggleButtonGroup
+              color="primary"
+              exclusive
+              value={loginMode}
+              onChange={handleModeChange}
+              sx={{ alignSelf: 'center' }}
+            >
+              <ToggleButton value="student" sx={{ px: 3 }}>
+                Student login
+              </ToggleButton>
+              <ToggleButton value="staff" sx={{ px: 3 }}>
+                Staff login
+              </ToggleButton>
+            </ToggleButtonGroup>
+
             {formState.status !== 'idle' && formState.status !== 'submitting' && (
-              <Alert severity="error">{formState.message}</Alert>
+              <Alert severity="error" sx={{ borderRadius: 3 }}>
+                {formState.message}
+              </Alert>
             )}
 
             <Stack spacing={2.5} component="form" noValidate onSubmit={handleSubmit}>
@@ -105,7 +155,11 @@ export default function LoginPageContent() {
                 disabled={formState.status === 'submitting'}
                 startIcon={formState.status === 'submitting' ? <CircularProgress size={20} color="inherit" /> : undefined}
               >
-                {formState.status === 'submitting' ? 'Logging in…' : 'Log in'}
+                {formState.status === 'submitting'
+                  ? 'Logging in…'
+                  : loginMode === 'student'
+                    ? 'Log in as student'
+                    : 'Log in to Forge'}
               </Button>
             </Stack>
 
@@ -114,9 +168,14 @@ export default function LoginPageContent() {
             <Stack spacing={1.5}>
               <Typography variant="body2" color="text.secondary">
                 Student accounts are issued by the administrative teams. Reach out to the Student Administrative Office or the IT
-                administrator to receive your credentials.
+                administrator to receive your credentials. Staff members should contact the IT administrator for Forge access.
               </Typography>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={1}
+                justifyContent="space-between"
+                alignItems={{ xs: 'stretch', sm: 'center' }}
+              >
                 <Typography variant="body2" color="text.secondary">
                   Email: admin-office@brillaracademy.edu
                 </Typography>
@@ -131,4 +190,3 @@ export default function LoginPageContent() {
     </Box>
   );
 }
-

@@ -7,6 +7,7 @@ import {
 import type { GradeRecord, SemesterGpa, SemesterRegistration } from './types.js';
 
 let inMemoryGrades = [...fallbackGrades];
+let nextGradeId = fallbackGrades.length + 1;
 let inMemoryGpa = [...fallbackSemesterGpa];
 let inMemoryRegistrationWindows = [...fallbackRegistrationWindows];
 
@@ -18,7 +19,12 @@ function normalizeGrade(row: any): GradeRecord {
     courseTitle: row.course_title,
     semester: row.semester,
     grade: row.grade,
-    credits: Number(row.credits)
+    credits: Number(row.credits),
+    recordedBy: row.recorded_by ?? row.recordedBy ?? null,
+    recordedAt:
+      row.recorded_at instanceof Date
+        ? row.recorded_at.toISOString()
+        : row.recorded_at ?? undefined
   };
 }
 
@@ -66,6 +72,29 @@ export async function listStudentGrades(studentId: number): Promise<GradeRecord[
   } catch (error) {
     console.error('Failed to fetch student grades', error);
     return inMemoryGrades.filter((grade) => grade.studentId === studentId);
+  }
+}
+
+export async function listTeacherGrades(teacherId: number): Promise<GradeRecord[]> {
+  const pool = getPool();
+
+  if (!pool) {
+    return inMemoryGrades.filter((grade) => grade.recordedBy === teacherId);
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, student_id, course_code, course_title, semester, grade, credits, recorded_by, recorded_at
+       FROM grade_records
+       WHERE recorded_by = $1
+       ORDER BY recorded_at DESC NULLS LAST, semester DESC`,
+      [teacherId]
+    );
+
+    return rows.map(normalizeGrade);
+  } catch (error) {
+    console.error('Failed to fetch teacher gradebook', error);
+    return inMemoryGrades.filter((grade) => grade.recordedBy === teacherId);
   }
 }
 
@@ -130,4 +159,63 @@ export function findCourseOffering(
   }
 
   return { window, course };
+}
+
+export type RecordStudentGradeInput = {
+  studentId: number;
+  courseCode: string;
+  courseTitle: string;
+  semester: string;
+  grade: string;
+  credits: number;
+};
+
+export async function recordStudentGrade(
+  input: RecordStudentGradeInput,
+  recordedBy: number
+): Promise<GradeRecord> {
+  const pool = getPool();
+  const recordedAt = new Date().toISOString();
+
+  if (!pool) {
+    const record: GradeRecord = {
+      id: nextGradeId++,
+      ...input,
+      recordedBy,
+      recordedAt
+    };
+
+    inMemoryGrades = [record, ...inMemoryGrades];
+    return record;
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO grade_records (student_id, course_code, course_title, semester, grade, credits, recorded_by, recorded_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, student_id, course_code, course_title, semester, grade, credits, recorded_by, recorded_at`,
+      [
+        input.studentId,
+        input.courseCode,
+        input.courseTitle,
+        input.semester,
+        input.grade,
+        input.credits,
+        recordedBy,
+        recordedAt
+      ]
+    );
+
+    return normalizeGrade(rows[0]);
+  } catch (error) {
+    console.error('Failed to persist grade record, falling back to in-memory store', error);
+    const record: GradeRecord = {
+      id: nextGradeId++,
+      ...input,
+      recordedBy,
+      recordedAt
+    };
+    inMemoryGrades = [record, ...inMemoryGrades];
+    return record;
+  }
 }

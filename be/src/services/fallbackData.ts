@@ -10,7 +10,9 @@ import type {
   GradeRecord,
   ExamAnnouncement,
   SemesterGpa,
-  SemesterRegistration
+  SemesterRegistration,
+  TeachingAssignment,
+  TeacherRosterEntry
 } from './types.js';
 
 export const fallbackFeatures: Feature[] = [
@@ -357,7 +359,9 @@ export const fallbackGrades: GradeRecord[] = [
     courseTitle: 'Advanced Bioinstrumentation',
     semester: 'Spring 2024',
     grade: 'A',
-    credits: 3
+    credits: 3,
+    recordedBy: 2,
+    recordedAt: '2024-05-10T15:00:00Z'
   },
   {
     id: 2,
@@ -366,7 +370,9 @@ export const fallbackGrades: GradeRecord[] = [
     courseTitle: 'Organic Synthesis Lab',
     semester: 'Spring 2024',
     grade: 'A-',
-    credits: 4
+    credits: 4,
+    recordedBy: 2,
+    recordedAt: '2024-05-10T15:05:00Z'
   },
   {
     id: 3,
@@ -375,16 +381,20 @@ export const fallbackGrades: GradeRecord[] = [
     courseTitle: 'Bayesian Machine Learning',
     semester: 'Spring 2024',
     grade: 'A',
-    credits: 3
+    credits: 3,
+    recordedBy: 2,
+    recordedAt: '2024-05-12T14:40:00Z'
   },
   {
     id: 4,
     studentId: 2,
-    courseCode: 'COMM-502',
-    courseTitle: 'Data Storytelling',
+    courseCode: 'STAT-575',
+    courseTitle: 'Responsible AI Fieldwork',
     semester: 'Spring 2024',
-    grade: 'B+',
-    credits: 2
+    grade: 'A-',
+    credits: 2,
+    recordedBy: 2,
+    recordedAt: '2024-05-12T14:45:00Z'
   }
 ];
 
@@ -479,3 +489,84 @@ export const fallbackRegistrationWindows: SemesterRegistration[] = [
     ]
   }
 ];
+
+export const fallbackTeachingAssignments: TeachingAssignment[] = [
+  {
+    id: 1,
+    teacherId: 2,
+    classroomId: 1,
+    courseCode: 'BIOE-521',
+    courseTitle: 'Advanced Bioinstrumentation',
+    weekday: 'Monday',
+    startTime: '09:00',
+    endTime: '10:15',
+    studentGroup: 'Biomedical Cohort A',
+    assignedBy: 1,
+    assignedAt: '2024-08-08T14:00:00Z'
+  },
+  {
+    id: 2,
+    teacherId: 2,
+    classroomId: 3,
+    courseCode: 'DATA-610',
+    courseTitle: 'Bayesian Machine Learning',
+    weekday: 'Wednesday',
+    startTime: '13:00',
+    endTime: '14:15',
+    studentGroup: 'Data Science Scholars',
+    assignedBy: 1,
+    assignedAt: '2024-08-08T14:30:00Z'
+  },
+  {
+    id: 3,
+    teacherId: 2,
+    classroomId: 2,
+    courseCode: 'CHEM-540',
+    courseTitle: 'Organic Synthesis Lab',
+    weekday: 'Thursday',
+    startTime: '14:30',
+    endTime: '16:00',
+    studentGroup: 'Advanced Chem Labs',
+    assignedBy: 1,
+    assignedAt: '2024-08-08T15:00:00Z'
+  }
+];
+
+export const fallbackTeacherRosters: TeacherRosterEntry[] = [
+  {
+    id: 1,
+    teacherId: 2,
+    courseCode: 'BIOE-521',
+    courseTitle: 'Advanced Bioinstrumentation',
+    studentId: 1,
+    status: 'enrolled'
+  },
+  {
+    id: 2,
+    teacherId: 2,
+    courseCode: 'CHEM-540',
+    courseTitle: 'Organic Synthesis Lab',
+    studentId: 1,
+    status: 'enrolled'
+  },
+  {
+    id: 3,
+    teacherId: 2,
+    courseCode: 'DATA-610',
+    courseTitle: 'Bayesian Machine Learning',
+    studentId: 2,
+    status: 'enrolled'
+  },
+  {
+    id: 4,
+    teacherId: 2,
+    courseCode: 'STAT-575',
+    courseTitle: 'Responsible AI Fieldwork',
+    studentId: 2,
+    status: 'waitlisted'
+  }
+];
+
+export const fallbackTeacherFocusTags: Record<number, string[]> = {
+  2: ['Research-led teaching', 'Precision grading', 'Cross-campus scheduling']
+};

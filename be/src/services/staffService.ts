@@ -126,3 +126,33 @@ export async function ensureInitialItAdmin(): Promise<StaffAccount> {
 
   return createStaffAccount(displayName, email, password, 'IT_ADMIN');
 }
+
+export async function findStaffById(id: number): Promise<StaffAccount | null> {
+  if (!Number.isFinite(id)) {
+    return null;
+  }
+
+  const pool = getPool();
+
+  if (!pool) {
+    return inMemoryStaff.find((item) => item.id === id) ?? null;
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, display_name, email, role, created_at
+       FROM staff_accounts
+       WHERE id = $1`,
+      [id]
+    );
+
+    if (!rows.length) {
+      return null;
+    }
+
+    return normalizeStaff(rows[0]);
+  } catch (error) {
+    console.error('Failed to locate staff account by id', error);
+    return inMemoryStaff.find((item) => item.id === id) ?? null;
+  }
+}

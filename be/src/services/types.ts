@@ -105,6 +105,8 @@ export type GradeRecord = {
   semester: string;
   grade: string;
   credits: number;
+  recordedBy?: number | null;
+  recordedAt?: string;
 };
 
 export type ExamAnnouncement = {
@@ -137,4 +139,54 @@ export type SemesterRegistration = {
   opensAt: string;
   closesAt: string;
   courses: SemesterRegistrationCourse[];
+};
+
+export type TeachingAssignment = {
+  id: number;
+  teacherId: number;
+  classroomId: number;
+  courseCode: string;
+  courseTitle: string;
+  weekday: string;
+  startTime: string;
+  endTime: string;
+  studentGroup: string;
+  assignedBy: number | null;
+  assignedAt: string;
+};
+
+export type TeacherScheduleSlot = {
+  assignmentId: number;
+  teacherId: number;
+  courseCode: string;
+  courseTitle: string;
+  weekday: string;
+  startTime: string;
+  endTime: string;
+  classroomName: string;
+  classroomLocation: string;
+  studentGroup: string;
+};
+
+export type TeacherRosterEntry = {
+  id: number;
+  teacherId: number;
+  courseCode: string;
+  courseTitle: string;
+  studentId: number;
+  status: 'enrolled' | 'waitlisted';
+};
+
+export type TeacherDashboardData = {
+  teacher: StaffAccount;
+  schedule: TeacherScheduleSlot[];
+  rosters: Array<{
+    courseCode: string;
+    courseTitle: string;
+    studentId: number;
+    studentName: string;
+    status: 'enrolled' | 'waitlisted';
+  }>;
+  recentGrades: GradeRecord[];
+  focusTags: string[];
 };
