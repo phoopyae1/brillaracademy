@@ -1,19 +1,41 @@
+import Avatar from '@mui/material/Avatar';
+import Badge from '@mui/material/Badge';
 import Box from '@mui/material/Box';
+import Chip from '@mui/material/Chip';
 import Container from '@mui/material/Container';
-import Typography from '@mui/material/Typography';
-import Stack from '@mui/material/Stack';
-import Grid from '@mui/material/Grid';
-import Paper from '@mui/material/Paper';
 import Divider from '@mui/material/Divider';
+import Grid from '@mui/material/Grid';
+import IconButton from '@mui/material/IconButton';
+import InputAdornment from '@mui/material/InputAdornment';
+import List from '@mui/material/List';
+import ListItemButton from '@mui/material/ListItemButton';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
+import Paper from '@mui/material/Paper';
+import Stack from '@mui/material/Stack';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
-import Chip from '@mui/material/Chip';
+import TextField from '@mui/material/TextField';
+import Typography from '@mui/material/Typography';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { fetchStudentDashboard } from '@/lib/db';
+import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded';
+import EventNoteRoundedIcon from '@mui/icons-material/EventNoteRounded';
+import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
+import QueryStatsRoundedIcon from '@mui/icons-material/QueryStatsRounded';
+import MailRoundedIcon from '@mui/icons-material/MailRounded';
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
+import NotificationsRoundedIcon from '@mui/icons-material/NotificationsRounded';
+import MenuBookRoundedIcon from '@mui/icons-material/MenuBookRounded';
+import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
+import AttachMoneyRoundedIcon from '@mui/icons-material/AttachMoneyRounded';
+import CalendarTodayRoundedIcon from '@mui/icons-material/CalendarTodayRounded';
+import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
+import TableContainer from '@mui/material/TableContainer';
 
 export const metadata = {
   title: 'Student Dashboard | Brillar Academy',
@@ -83,300 +105,560 @@ export default async function DashboardPage() {
   const gpaHighlights = gpaBySemester.slice(0, 3);
   const nextRegistrationWindow = registrationWindows.find((window) => window.status === 'open') ?? registrationWindows[0];
 
-  return (
-    <Box sx={{ minHeight: '100vh', background: 'linear-gradient(180deg, #ECF4FF 0%, #F6FBFF 100%)', py: { xs: 6, md: 10 } }}>
-      <Container maxWidth="lg">
-        <Stack spacing={5}>
-          <Stack spacing={1} textAlign={{ xs: 'center', md: 'left' }}>
-            <Typography variant="overline" sx={{ color: 'primary.main', letterSpacing: 2 }}>
-              Student dashboard
-            </Typography>
-            <Typography variant="h3" fontWeight={700}>
-              Hello {student.firstName}!
-            </Typography>
-            <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 620, mx: { xs: 'auto', md: 0 } }}>
-              Review your live timetable, stay aligned with upcoming sessions, and confirm the classes you are currently registered for.
-            </Typography>
-          </Stack>
+  const navItems = [
+    { label: 'Overview', icon: <DashboardRoundedIcon fontSize="small" /> },
+    { label: 'Courses', icon: <SchoolRoundedIcon fontSize="small" /> },
+    { label: 'Planning', icon: <EventNoteRoundedIcon fontSize="small" /> },
+    { label: 'Statistics', icon: <QueryStatsRoundedIcon fontSize="small" /> },
+    { label: 'Messages', icon: <MailRoundedIcon fontSize="small" /> }
+  ];
 
-          <Grid container spacing={4}>
-            <Grid item xs={12} md={4}>
-              <Paper elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider', p: 3, height: '100%' }}>
-                <Stack spacing={2}>
-                  <Typography variant="subtitle1" fontWeight={700}>
-                    GPA snapshots
+  const registeredCourses = registrations.filter((registration) => registration.status === 'registered');
+  const totalOutstanding = outstandingFees.reduce((sum, fee) => sum + fee.amount, 0);
+  const nextTimetableEntry = sortedTimetable[0];
+  const nextExam = upcomingExamList[0];
+  const scheduleHighlights = schedule.slice(0, 3);
+  const gradeHighlights = grades.slice(0, 5);
+  const averageGpa = gpaBySemester.length
+    ? gpaBySemester.reduce((sum, entry) => sum + entry.gpa, 0) / gpaBySemester.length
+    : null;
+
+  const avatarInitials = `${student.firstName.charAt(0)}${student.lastName ? student.lastName.charAt(0) : ''}`;
+
+  return (
+    <Box
+      sx={{
+        minHeight: '100vh',
+        background: 'radial-gradient(circle at top, rgba(231, 238, 255, 0.9) 0%, rgba(246, 246, 252, 0.95) 45%, #ffffff 100%)',
+        py: { xs: 5, md: 8 }
+      }}
+    >
+      <Container maxWidth="xl">
+        <Grid container spacing={4}>
+          <Grid item xs={12} md={3} lg={3}>
+            <Paper
+              elevation={0}
+              sx={{
+                borderRadius: 5,
+                p: 3,
+                height: '100%',
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.92) 0%, rgba(242, 245, 255, 0.92) 100%)',
+                border: '1px solid',
+                borderColor: 'rgba(255,255,255,0.6)',
+                boxShadow: '0px 16px 48px rgba(86, 115, 204, 0.08)'
+              }}
+            >
+              <Stack spacing={4}>
+                <Stack spacing={1.5}>
+                  <Typography variant="body2" sx={{ color: 'primary.main', fontWeight: 600 }}>
+                    Brillar Academy
                   </Typography>
-                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                    {gpaHighlights.map((item) => (
-                      <Chip key={item.id} label={`${item.semester}: ${item.gpa.toFixed(2)}`} color="primary" variant="outlined" />
-                    ))}
-                    {!gpaHighlights.length && <Typography variant="body2">No GPA records yet.</Typography>}
-                  </Stack>
-                </Stack>
-              </Paper>
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <Paper elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider', p: 3, height: '100%' }}>
-                <Stack spacing={2}>
-                  <Typography variant="subtitle1" fontWeight={700}>
-                    Upcoming exams
+                  <Typography variant="h5" fontWeight={700}>
+                    Student Portal
                   </Typography>
-                  <Stack spacing={1.5}>
-                    {upcomingExamList.map((exam) => (
-                      <Stack key={exam.id} spacing={0.5}>
-                        <Typography fontWeight={600}>{exam.title}</Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {formatDateTime(exam.examDate)}
-                        </Typography>
-                      </Stack>
-                    ))}
-                    {!upcomingExamList.length && <Typography variant="body2">No upcoming exams posted.</Typography>}
-                  </Stack>
-                </Stack>
-              </Paper>
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <Paper elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider', p: 3, height: '100%' }}>
-                <Stack spacing={2}>
-                  <Typography variant="subtitle1" fontWeight={700}>
-                    Financial reminders
+                  <Typography variant="body2" color="text.secondary">
+                    Navigate through your courses, plan your week, and monitor key milestones from a single dashboard.
                   </Typography>
-                  <Stack spacing={1.5}>
-                    {outstandingFees.map((fee) => (
-                      <Stack key={fee.id} spacing={0.5}>
-                        <Typography fontWeight={600}>{formatCurrency(fee.amount)}</Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {fee.description ?? 'Tuition or fee'} · Due {fee.dueDate ? formatDateTime(fee.dueDate) : 'soon'}
-                        </Typography>
-                      </Stack>
-                    ))}
-                    {!outstandingFees.length && <Typography variant="body2">All fees are up to date.</Typography>}
-                  </Stack>
                 </Stack>
-              </Paper>
-            </Grid>
+
+                <List disablePadding>
+                  {navItems.map((item, index) => (
+                    <ListItemButton
+                      key={item.label}
+                      selected={index === 0}
+                      sx={{
+                        mb: 1.5,
+                        borderRadius: 3,
+                        backgroundColor: index === 0 ? 'rgba(99, 102, 241, 0.14)' : 'transparent',
+                        '&.Mui-selected:hover': {
+                          backgroundColor: 'rgba(99, 102, 241, 0.24)'
+                        }
+                      }}
+                    >
+                      <ListItemIcon sx={{ color: index === 0 ? 'primary.main' : 'text.secondary', minWidth: 40 }}>
+                        {item.icon}
+                      </ListItemIcon>
+                      <ListItemText
+                        primary={item.label}
+                        primaryTypographyProps={{ fontWeight: index === 0 ? 600 : 500, color: index === 0 ? 'primary.main' : 'text.primary' }}
+                      />
+                    </ListItemButton>
+                  ))}
+                </List>
+
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    borderRadius: 4,
+                    p: 3,
+                    background: 'linear-gradient(135deg, rgba(129, 140, 248, 0.16) 0%, rgba(192, 132, 252, 0.18) 100%)',
+                    borderColor: 'rgba(120, 113, 198, 0.3)'
+                  }}
+                >
+                  <Stack spacing={1}>
+                    <Typography variant="subtitle2" fontWeight={600}>
+                      Need a hand?
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      Contact your advisor for course adjustments or curriculum guidance at any time.
+                    </Typography>
+                    <Chip label="Advisor support" size="small" color="primary" variant="outlined" sx={{ alignSelf: 'flex-start' }} />
+                  </Stack>
+                </Paper>
+              </Stack>
+            </Paper>
           </Grid>
 
-          <Grid container spacing={4}>
-            <Grid item xs={12} md={6}>
-              <Paper elevation={3} sx={{ borderRadius: 4, p: { xs: 3, md: 4 }, height: '100%' }}>
-                <Stack spacing={2}>
-                  <Box>
-                    <Typography variant="h6" fontWeight={700} gutterBottom>
-                      Weekly timetable
+          <Grid item xs={12} md={9} lg={9}>
+            <Stack spacing={4}>
+              <Paper
+                elevation={0}
+                sx={{
+                  borderRadius: 5,
+                  p: { xs: 3, sm: 4 },
+                  background: 'linear-gradient(135deg, rgba(236, 233, 254, 0.85) 0%, rgba(222, 242, 255, 0.9) 45%, rgba(255, 255, 255, 0.95) 100%)',
+                  border: '1px solid rgba(255,255,255,0.7)',
+                  boxShadow: '0px 20px 60px rgba(93, 107, 207, 0.12)'
+                }}
+              >
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={3} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between">
+                  <Stack spacing={1.5}>
+                    <Chip label="Student dashboard" size="small" color="primary" sx={{ alignSelf: 'flex-start', fontWeight: 600 }} />
+                    <Typography variant="h4" fontWeight={700}>
+                      Hello {student.firstName} 👋
                     </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Track where you need to be and when across the academy.
+                    <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 460 }}>
+                      Here’s a snapshot of your learning journey. Track schedules, assessments, and outstanding actions for the week.
                     </Typography>
-                  </Box>
+                    {nextTimetableEntry && (
+                      <Chip
+                        icon={<ScheduleRoundedIcon fontSize="small" />}
+                        label={`Next class: ${nextTimetableEntry.subject} · ${nextTimetableEntry.weekday} ${nextTimetableEntry.startTime}`}
+                        sx={{
+                          alignSelf: 'flex-start',
+                          backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                          color: 'primary.main',
+                          fontWeight: 600
+                        }}
+                      />
+                    )}
+                  </Stack>
 
-                  <Divider sx={{ borderStyle: 'dashed' }} />
-
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Day</TableCell>
-                        <TableCell>Time</TableCell>
-                        <TableCell>Subject</TableCell>
-                        <TableCell>Location</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {sortedTimetable.map((entry) => (
-                        <TableRow key={entry.id}>
-                          <TableCell sx={{ fontWeight: 600 }}>{entry.weekday}</TableCell>
-                          <TableCell>
-                            {entry.startTime} – {entry.endTime}
-                          </TableCell>
-                          <TableCell>{entry.subject}</TableCell>
-                          <TableCell>{entry.location ?? 'TBA'}</TableCell>
-                        </TableRow>
-                      ))}
-                      {!sortedTimetable.length && (
-                        <TableRow>
-                          <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                            No sessions scheduled yet.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
+                  <Stack spacing={2} width={{ xs: '100%', md: 320 }}>
+                    <TextField
+                      fullWidth
+                      placeholder="Search courses or tutors"
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <SearchRoundedIcon fontSize="small" color="action" />
+                          </InputAdornment>
+                        ),
+                        sx: {
+                          borderRadius: 3,
+                          backgroundColor: 'rgba(255,255,255,0.9)',
+                          '& fieldset': { border: 'none' }
+                        }
+                      }}
+                      size="small"
+                    />
+                    <Stack direction="row" spacing={2} alignItems="center" justifyContent={{ xs: 'flex-start', md: 'flex-end' }}>
+                      <IconButton
+                        sx={{
+                          backgroundColor: 'rgba(255,255,255,0.9)',
+                          boxShadow: '0 8px 24px rgba(99, 102, 241, 0.18)',
+                          '&:hover': { backgroundColor: 'rgba(255,255,255,1)' }
+                        }}
+                      >
+                        <Badge color="error" variant="dot" overlap="circular">
+                          <NotificationsRoundedIcon color="primary" />
+                        </Badge>
+                      </IconButton>
+                      <Avatar
+                        sx={{
+                          bgcolor: 'primary.main',
+                          color: 'primary.contrastText',
+                          width: 44,
+                          height: 44,
+                          fontWeight: 600
+                        }}
+                      >
+                        {avatarInitials.toUpperCase()}
+                      </Avatar>
+                    </Stack>
+                  </Stack>
                 </Stack>
               </Paper>
-            </Grid>
 
-            <Grid item xs={12} md={6}>
-              <Paper elevation={3} sx={{ borderRadius: 4, p: { xs: 3, md: 4 }, height: '100%' }}>
-                <Stack spacing={2}>
-                  <Box>
-                    <Typography variant="h6" fontWeight={700} gutterBottom>
-                      Upcoming schedule
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Stay prepared with advisor meetings, workshops, and mentorship touchpoints.
-                    </Typography>
-                  </Box>
+              <Grid container spacing={3}>
+                <Grid item xs={12} md={4}>
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      borderRadius: 4,
+                      p: 3,
+                      height: '100%',
+                      background: 'linear-gradient(150deg, rgba(99, 102, 241, 0.14) 0%, rgba(79, 70, 229, 0.08) 100%)',
+                      border: '1px solid rgba(99,102,241,0.18)'
+                    }}
+                  >
+                    <Stack spacing={2}>
+                      <Stack direction="row" spacing={1.5} alignItems="center">
+                        <MenuBookRoundedIcon color="primary" />
+                        <Typography variant="subtitle2" fontWeight={600} color="primary.main">
+                          Active courses
+                        </Typography>
+                      </Stack>
+                      <Typography variant="h3" fontWeight={700}>
+                        {registeredCourses.length}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {registrations.length} total registrations this term.
+                      </Typography>
+                    </Stack>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      borderRadius: 4,
+                      p: 3,
+                      height: '100%',
+                      background: 'linear-gradient(150deg, rgba(56, 189, 248, 0.16) 0%, rgba(129, 140, 248, 0.12) 100%)',
+                      border: '1px solid rgba(56,189,248,0.2)'
+                    }}
+                  >
+                    <Stack spacing={2}>
+                      <Stack direction="row" spacing={1.5} alignItems="center">
+                        <ScheduleRoundedIcon color="info" />
+                        <Typography variant="subtitle2" fontWeight={600} color="info.main">
+                          Upcoming events
+                        </Typography>
+                      </Stack>
+                      <Typography variant="h3" fontWeight={700}>
+                        {schedule.length}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {schedule.length ? 'Review the agenda below and stay prepared.' : 'No events scheduled just yet.'}
+                      </Typography>
+                    </Stack>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      borderRadius: 4,
+                      p: 3,
+                      height: '100%',
+                      background: 'linear-gradient(150deg, rgba(244, 114, 182, 0.14) 0%, rgba(251, 191, 36, 0.12) 100%)',
+                      border: '1px solid rgba(244,114,182,0.18)'
+                    }}
+                  >
+                    <Stack spacing={2}>
+                      <Stack direction="row" spacing={1.5} alignItems="center">
+                        <AttachMoneyRoundedIcon color="secondary" />
+                        <Typography variant="subtitle2" fontWeight={600} color="secondary.main">
+                          Outstanding balance
+                        </Typography>
+                      </Stack>
+                      <Typography variant="h3" fontWeight={700}>
+                        {totalOutstanding > 0 ? formatCurrency(totalOutstanding) : '$0'}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {outstandingFees.length
+                          ? `${outstandingFees.length} fee reminder${outstandingFees.length > 1 ? 's' : ''} awaiting payment.`
+                          : 'All payments are current. Great job!'}
+                      </Typography>
+                    </Stack>
+                  </Paper>
+                </Grid>
+              </Grid>
 
-                  <Divider sx={{ borderStyle: 'dashed' }} />
-
-                  <Stack spacing={2}>
-                    {schedule.map((item) => (
-                      <Paper key={item.id} variant="outlined" sx={{ borderRadius: 3, p: 2.5 }}>
-                        <Stack spacing={1}>
-                          <Typography variant="subtitle1" fontWeight={600}>
-                            {item.title}
+              <Grid container spacing={3}>
+                <Grid item xs={12} md={8}>
+                  <Stack spacing={3}>
+                    <Paper elevation={0} sx={{ borderRadius: 4, p: 3, backgroundColor: '#ffffff', boxShadow: '0px 12px 36px rgba(15, 23, 42, 0.04)' }}>
+                      <Stack spacing={2}>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography variant="h6" fontWeight={700}>
+                            Weekly timetable
                           </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {formatDateTime(item.startTime)} – {formatDateTime(item.endTime)}
+                          <Chip icon={<CalendarTodayRoundedIcon fontSize="small" />} label="This week" size="small" color="primary" variant="outlined" />
+                        </Stack>
+                        <Typography variant="body2" color="text.secondary">
+                          Track locations and course sessions for the coming week.
+                        </Typography>
+                        <Divider sx={{ borderStyle: 'dashed' }} />
+                        <TableContainer>
+                          <Table size="small">
+                            <TableHead>
+                              <TableRow>
+                                <TableCell>Day</TableCell>
+                                <TableCell>Time</TableCell>
+                                <TableCell>Subject</TableCell>
+                                <TableCell>Location</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {sortedTimetable.map((entry) => (
+                                <TableRow key={entry.id}>
+                                  <TableCell sx={{ fontWeight: 600 }}>{entry.weekday}</TableCell>
+                                  <TableCell>
+                                    {entry.startTime} – {entry.endTime}
+                                  </TableCell>
+                                  <TableCell>{entry.subject}</TableCell>
+                                  <TableCell>{entry.location ?? 'TBA'}</TableCell>
+                                </TableRow>
+                              ))}
+                              {!sortedTimetable.length && (
+                                <TableRow>
+                                  <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                                    No sessions scheduled yet.
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
+                      </Stack>
+                    </Paper>
+
+                    <Paper elevation={0} sx={{ borderRadius: 4, p: 3, backgroundColor: '#ffffff', boxShadow: '0px 12px 36px rgba(15, 23, 42, 0.04)' }}>
+                      <Stack spacing={2}>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography variant="h6" fontWeight={700}>
+                            Upcoming schedule
                           </Typography>
-                          {item.description && (
-                            <Typography variant="body2" color="text.secondary">
-                              {item.description}
+                          <Chip icon={<ScheduleRoundedIcon fontSize="small" />} label={`${schedule.length} event${schedule.length === 1 ? '' : 's'}`} size="small" color="info" variant="outlined" />
+                        </Stack>
+                        <Typography variant="body2" color="text.secondary">
+                          Stay prepared for advisor meetings, workshops, and mentorship touchpoints.
+                        </Typography>
+                        <Stack spacing={2}>
+                          {scheduleHighlights.map((item) => (
+                            <Paper key={item.id} variant="outlined" sx={{ borderRadius: 3, p: 2.5, borderColor: 'rgba(79,70,229,0.18)' }}>
+                              <Stack spacing={1}>
+                                <Typography variant="subtitle1" fontWeight={600}>
+                                  {item.title}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                  {formatDateTime(item.startTime)} – {formatDateTime(item.endTime)}
+                                </Typography>
+                                {item.description && (
+                                  <Typography variant="body2" color="text.secondary">
+                                    {item.description}
+                                  </Typography>
+                                )}
+                              </Stack>
+                            </Paper>
+                          ))}
+                          {!scheduleHighlights.length && (
+                            <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ py: 4 }}>
+                              No upcoming events yet. Once you add schedule items, they will appear here.
                             </Typography>
                           )}
                         </Stack>
-                      </Paper>
-                    ))}
-                    {!schedule.length && (
-                      <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ py: 4 }}>
-                        No upcoming events yet. Once you add schedule items, they will appear here.
-                      </Typography>
-                    )}
+                      </Stack>
+                    </Paper>
                   </Stack>
-                </Stack>
-              </Paper>
-            </Grid>
-          </Grid>
+                </Grid>
 
-          <Paper elevation={3} sx={{ borderRadius: 4, p: { xs: 3, md: 4 } }}>
-            <Stack spacing={2}>
-              <Box>
-                <Typography variant="h6" fontWeight={700} gutterBottom>
-                  Class registrations
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Confirm your enrolled classes, instructors, and registration status in one place.
-                </Typography>
-              </Box>
-
-              <Divider sx={{ borderStyle: 'dashed' }} />
-
-              <Table size="medium">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Class</TableCell>
-                    <TableCell>Instructor</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell>Registered</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {registrations.map((registration) => (
-                    <TableRow key={registration.id}>
-                      <TableCell sx={{ fontWeight: 600 }}>{registration.className}</TableCell>
-                      <TableCell>{registration.instructor ?? 'TBA'}</TableCell>
-                      <TableCell>
-                        <Chip
-                          label={registration.status}
-                          color={registration.status === 'registered' ? 'success' : registration.status === 'waitlisted' ? 'warning' : 'default'}
-                          size="small"
-                          sx={{ textTransform: 'capitalize', fontWeight: 600 }}
-                        />
-                      </TableCell>
-                      <TableCell>{formatDateTime(registration.registeredAt)}</TableCell>
-                    </TableRow>
-                  ))}
-                  {!registrations.length && (
-                    <TableRow>
-                      <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                        No class registrations have been submitted yet.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </Stack>
-          </Paper>
-
-          <Grid container spacing={4}>
-            <Grid item xs={12} md={6}>
-              <Paper elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 }, height: '100%' }}>
-                <Stack spacing={2}>
-                  <Typography variant="h6" fontWeight={700}>
-                    Grade summary
-                  </Typography>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Course</TableCell>
-                        <TableCell>Semester</TableCell>
-                        <TableCell>Grade</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {grades.map((grade) => (
-                        <TableRow key={grade.id}>
-                          <TableCell>
-                            <Stack spacing={0.5}>
-                              <Typography fontWeight={600}>{grade.courseTitle}</Typography>
+                <Grid item xs={12} md={4}>
+                  <Stack spacing={3}>
+                    <Paper elevation={0} sx={{ borderRadius: 4, p: 3, backgroundColor: '#ffffff', boxShadow: '0px 12px 36px rgba(15, 23, 42, 0.04)' }}>
+                      <Stack spacing={2}>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography variant="h6" fontWeight={700}>
+                            Upcoming exams
+                          </Typography>
+                          <Chip icon={<TrendingUpRoundedIcon fontSize="small" />} label="Assessments" size="small" color="secondary" variant="outlined" />
+                        </Stack>
+                        <Stack spacing={1.5}>
+                          {upcomingExamList.map((exam) => (
+                            <Stack key={exam.id} spacing={0.75}>
+                              <Typography fontWeight={600}>{exam.title}</Typography>
                               <Typography variant="caption" color="text.secondary">
-                                {grade.courseCode}
+                                {formatDateTime(exam.examDate)}
                               </Typography>
                             </Stack>
-                          </TableCell>
-                          <TableCell>{grade.semester}</TableCell>
-                          <TableCell>{grade.grade}</TableCell>
-                        </TableRow>
-                      ))}
-                      {!grades.length && (
-                        <TableRow>
-                          <TableCell colSpan={3} align="center" sx={{ py: 3, color: 'text.secondary' }}>
-                            No grades published yet.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </Stack>
-              </Paper>
-            </Grid>
-            <Grid item xs={12} md={6}>
-              <Paper elevation={0} sx={{ borderRadius: 4, border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 }, height: '100%' }}>
-                <Stack spacing={2}>
-                  <Typography variant="h6" fontWeight={700}>
-                    Registration windows
-                  </Typography>
-                  {nextRegistrationWindow ? (
-                    <Stack spacing={1}>
-                      <Typography fontWeight={600}>{nextRegistrationWindow.semester}</Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Status: {nextRegistrationWindow.status.toUpperCase()} · Opens {formatDateTime(nextRegistrationWindow.opensAt)}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Closes {formatDateTime(nextRegistrationWindow.closesAt)}
-                      </Typography>
-                      <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
-                      <Stack spacing={1}>
-                        {nextRegistrationWindow.courses.map((course) => (
-                          <Stack key={course.courseCode} spacing={0.25}>
-                            <Typography fontWeight={600}>{course.courseTitle}</Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {course.courseCode} · {course.instructor} · {course.credits} credits
-                            </Typography>
-                          </Stack>
-                        ))}
+                          ))}
+                          {!upcomingExamList.length && <Typography variant="body2">No upcoming exams posted.</Typography>}
+                        </Stack>
+                        {nextExam && (
+                          <Chip
+                            icon={<CalendarTodayRoundedIcon fontSize="small" />}
+                            label={`Next exam: ${formatDateTime(nextExam.examDate)}`}
+                            size="small"
+                            sx={{ alignSelf: 'flex-start', fontWeight: 600 }}
+                          />
+                        )}
                       </Stack>
+                    </Paper>
+
+                    <Paper elevation={0} sx={{ borderRadius: 4, p: 3, backgroundColor: '#ffffff', boxShadow: '0px 12px 36px rgba(15, 23, 42, 0.04)' }}>
+                      <Stack spacing={2}>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography variant="h6" fontWeight={700}>
+                            Financial reminders
+                          </Typography>
+                          <Chip icon={<AttachMoneyRoundedIcon fontSize="small" />} label="Billing" size="small" color="success" variant="outlined" />
+                        </Stack>
+                        <Stack spacing={1.5}>
+                          {outstandingFees.map((fee) => (
+                            <Stack key={fee.id} spacing={0.75}>
+                              <Typography fontWeight={600}>{formatCurrency(fee.amount)}</Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {fee.description ?? 'Tuition or fee'} · Due {fee.dueDate ? formatDateTime(fee.dueDate) : 'soon'}
+                              </Typography>
+                            </Stack>
+                          ))}
+                          {!outstandingFees.length && <Typography variant="body2">All fees are up to date.</Typography>}
+                        </Stack>
+                      </Stack>
+                    </Paper>
+
+                    <Paper elevation={0} sx={{ borderRadius: 4, p: 3, backgroundColor: '#ffffff', boxShadow: '0px 12px 36px rgba(15, 23, 42, 0.04)' }}>
+                      <Stack spacing={2}>
+                        <Typography variant="h6" fontWeight={700}>
+                          GPA snapshots
+                        </Typography>
+                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                          {gpaHighlights.map((item) => (
+                            <Chip key={item.id} label={`${item.semester}: ${item.gpa.toFixed(2)}`} color="primary" variant="outlined" />
+                          ))}
+                          {!gpaHighlights.length && <Typography variant="body2">No GPA records yet.</Typography>}
+                        </Stack>
+                        {averageGpa !== null && (
+                          <Typography variant="body2" color="text.secondary">
+                            Overall GPA to date: <Typography component="span" fontWeight={700}>{averageGpa.toFixed(2)}</Typography>
+                          </Typography>
+                        )}
+                      </Stack>
+                    </Paper>
+                  </Stack>
+                </Grid>
+              </Grid>
+
+              <Grid container spacing={3}>
+                <Grid item xs={12} md={7}>
+                  <Paper elevation={0} sx={{ borderRadius: 4, p: 3, backgroundColor: '#ffffff', boxShadow: '0px 16px 40px rgba(15, 23, 42, 0.06)' }}>
+                    <Stack spacing={2}>
+                      <Typography variant="h6" fontWeight={700}>
+                        Class registrations
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Confirm your enrolled classes, instructors, and registration status in one place.
+                      </Typography>
+                      <Divider sx={{ borderStyle: 'dashed' }} />
+                      <TableContainer>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>Class</TableCell>
+                              <TableCell>Instructor</TableCell>
+                              <TableCell>Status</TableCell>
+                              <TableCell>Registered</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {registrations.map((registration) => (
+                              <TableRow key={registration.id}>
+                                <TableCell sx={{ fontWeight: 600 }}>{registration.className}</TableCell>
+                                <TableCell>{registration.instructor ?? 'TBA'}</TableCell>
+                                <TableCell>
+                                  <Chip
+                                    label={registration.status}
+                                    color={registration.status === 'registered' ? 'success' : registration.status === 'waitlisted' ? 'warning' : 'default'}
+                                    size="small"
+                                    sx={{ textTransform: 'capitalize', fontWeight: 600 }}
+                                  />
+                                </TableCell>
+                                <TableCell>{formatDateTime(registration.registeredAt)}</TableCell>
+                              </TableRow>
+                            ))}
+                            {!registrations.length && (
+                              <TableRow>
+                                <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                                  No class registrations have been submitted yet.
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
                     </Stack>
-                  ) : (
-                    <Typography variant="body2" color="text.secondary">
-                      Registration windows will appear here as soon as they are announced.
-                    </Typography>
-                  )}
-                </Stack>
-              </Paper>
-            </Grid>
+                  </Paper>
+                </Grid>
+
+                <Grid item xs={12} md={5}>
+                  <Stack spacing={3}>
+                    <Paper elevation={0} sx={{ borderRadius: 4, p: 3, backgroundColor: '#ffffff', boxShadow: '0px 16px 40px rgba(15, 23, 42, 0.06)' }}>
+                      <Stack spacing={2}>
+                        <Typography variant="h6" fontWeight={700}>
+                          Grade summary
+                        </Typography>
+                        <Stack spacing={1.5}>
+                          {gradeHighlights.map((grade) => (
+                            <Stack key={grade.id} direction="row" justifyContent="space-between" alignItems="center">
+                              <Stack spacing={0.5}>
+                                <Typography fontWeight={600}>{grade.courseTitle}</Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {grade.courseCode} · {grade.semester}
+                                </Typography>
+                              </Stack>
+                              <Chip label={grade.grade} color="primary" variant="outlined" />
+                            </Stack>
+                          ))}
+                          {!gradeHighlights.length && (
+                            <Typography variant="body2" color="text.secondary">
+                              No grades published yet.
+                            </Typography>
+                          )}
+                        </Stack>
+                      </Stack>
+                    </Paper>
+
+                    <Paper elevation={0} sx={{ borderRadius: 4, p: 3, backgroundColor: '#ffffff', boxShadow: '0px 16px 40px rgba(15, 23, 42, 0.06)' }}>
+                      <Stack spacing={2}>
+                        <Typography variant="h6" fontWeight={700}>
+                          Registration windows
+                        </Typography>
+                        {nextRegistrationWindow ? (
+                          <Stack spacing={1}>
+                            <Typography fontWeight={600}>{nextRegistrationWindow.semester}</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Status: {nextRegistrationWindow.status.toUpperCase()} · Opens {formatDateTime(nextRegistrationWindow.opensAt)}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Closes {formatDateTime(nextRegistrationWindow.closesAt)}
+                            </Typography>
+                            <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
+                            <Stack spacing={1}>
+                              {nextRegistrationWindow.courses.map((course) => (
+                                <Stack key={course.courseCode} spacing={0.25}>
+                                  <Typography fontWeight={600}>{course.courseTitle}</Typography>
+                                  <Typography variant="caption" color="text.secondary">
+                                    {course.courseCode} · {course.instructor} · {course.credits} credits
+                                  </Typography>
+                                </Stack>
+                              ))}
+                            </Stack>
+                          </Stack>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            Registration windows will appear here as soon as they are announced.
+                          </Typography>
+                        )}
+                      </Stack>
+                    </Paper>
+                  </Stack>
+                </Grid>
+              </Grid>
+            </Stack>
           </Grid>
-        </Stack>
+        </Grid>
       </Container>
     </Box>
   );
