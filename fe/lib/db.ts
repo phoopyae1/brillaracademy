@@ -92,6 +92,7 @@ export type StudentDashboardData = {
     status: string;
     registeredAt: string;
   }>;
+  classroomEnrollments: ClassroomEnrollment[];
   grades: GradeRecord[];
   upcomingExams: ExamAnnouncement[];
   gpaBySemester: SemesterGpa[];
@@ -115,6 +116,20 @@ export type Classroom = {
   resources: string[];
   createdBy: number | null;
   createdAt: string;
+};
+
+export type ClassroomAvailability = Classroom & {
+  seatsFilled: number;
+  seatsAvailable: number;
+  isFull: boolean;
+};
+
+export type ClassroomEnrollment = {
+  id: number;
+  classroomId: number;
+  studentId: number;
+  status: 'enrolled' | 'waitlisted';
+  registeredAt: string;
 };
 
 export type TeacherScheduleSlot = {
@@ -400,6 +415,30 @@ export async function listClassrooms(token: string): Promise<Classroom[]> {
   });
 
   return data.classrooms ?? [];
+}
+
+export async function listAvailableClassrooms(): Promise<ClassroomAvailability[]> {
+  const data = await apiRequest<{ classrooms?: ClassroomAvailability[] }>(
+    '/classrooms/public/available',
+    { cache: 'no-store' }
+  );
+
+  return data.classrooms ?? [];
+}
+
+export async function registerForClassroom(input: {
+  studentId: number;
+  classroomId: number;
+}): Promise<ClassroomEnrollment> {
+  const data = await apiRequest<{ enrollment: ClassroomEnrollment }>(
+    `/classrooms/${input.classroomId}/self-registrations`,
+    {
+      method: 'POST',
+      body: { studentId: input.studentId }
+    }
+  );
+
+  return data.enrollment;
 }
 
 export async function listFeePayments(token: string, studentId?: number): Promise<FeePayment[]> {

@@ -12,7 +12,8 @@ import type {
   SemesterGpa,
   SemesterRegistration,
   TeachingAssignment,
-  TeacherRosterEntry
+  TeacherRosterEntry,
+  ClassroomEnrollment
 } from './types.js';
 
 export const fallbackFeatures: Feature[] = [
@@ -315,6 +316,23 @@ export const fallbackClassrooms: Classroom[] = [
     resources: ['High-Performance Workstations', 'Data Wall'],
     createdBy: 1,
     createdAt: new Date('2024-08-07T14:15:00Z').toISOString()
+  }
+];
+
+export const fallbackClassroomEnrollments: ClassroomEnrollment[] = [
+  {
+    id: 1,
+    studentId: 1,
+    classroomId: 1,
+    status: 'enrolled',
+    registeredAt: new Date('2024-08-22T15:30:00Z').toISOString()
+  },
+  {
+    id: 2,
+    studentId: 2,
+    classroomId: 3,
+    status: 'enrolled',
+    registeredAt: new Date('2024-08-23T10:15:00Z').toISOString()
   }
 ];
 

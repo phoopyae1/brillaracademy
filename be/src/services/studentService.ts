@@ -23,6 +23,7 @@ import {
   findCourseOffering
 } from './academicService.js';
 import { listStudentFeePayments } from './financeService.js';
+import { listClassroomEnrollmentsForStudent } from './classroomService.js';
 
 let inMemoryStudents = [...fallbackStudents];
 let inMemoryTimetables = [...fallbackTimetables];
@@ -179,12 +180,13 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       return null;
     }
 
-    const [grades, exams, gpaBySemester, registrationWindows, fees] = await Promise.all([
+    const [grades, exams, gpaBySemester, registrationWindows, fees, classroomEnrollments] = await Promise.all([
       listStudentGrades(studentId),
       listExamAnnouncements(),
       listStudentSemesterGpa(studentId),
       listRegistrationWindows(),
-      listStudentFeePayments(studentId)
+      listStudentFeePayments(studentId),
+      listClassroomEnrollmentsForStudent(studentId)
     ]);
     const upcomingExams = exams
       .filter((exam) => new Date(exam.examDate).getTime() >= Date.now())
@@ -195,6 +197,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       timetable: inMemoryTimetables.filter((entry) => entry.studentId === studentId),
       schedule: inMemorySchedules.filter((entry) => entry.studentId === studentId),
       registrations: inMemoryRegistrations.filter((entry) => entry.studentId === studentId),
+      classroomEnrollments,
       grades,
       upcomingExams,
       gpaBySemester,
@@ -239,12 +242,13 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       )
     ]);
 
-    const [grades, exams, gpaBySemester, registrationWindows, fees] = await Promise.all([
+    const [grades, exams, gpaBySemester, registrationWindows, fees, classroomEnrollments] = await Promise.all([
       listStudentGrades(studentId),
       listExamAnnouncements(),
       listStudentSemesterGpa(studentId),
       listRegistrationWindows(),
-      listStudentFeePayments(studentId)
+      listStudentFeePayments(studentId),
+      listClassroomEnrollmentsForStudent(studentId)
     ]);
     const upcomingExams = exams
       .filter((exam) => new Date(exam.examDate).getTime() >= Date.now())
@@ -255,6 +259,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       timetable: timetableResult.rows,
       schedule: scheduleResult.rows,
       registrations: registrationsResult.rows,
+      classroomEnrollments,
       grades,
       upcomingExams,
       gpaBySemester,

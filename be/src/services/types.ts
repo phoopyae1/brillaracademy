@@ -50,6 +50,7 @@ export type StudentDashboardData = {
   timetable: TimetableEntry[];
   schedule: ScheduleItem[];
   registrations: ClassRegistration[];
+  classroomEnrollments: ClassroomEnrollment[];
   grades: GradeRecord[];
   upcomingExams: ExamAnnouncement[];
   gpaBySemester: SemesterGpa[];
@@ -84,6 +85,22 @@ export type Classroom = {
   resources: string[];
   createdBy: number | null;
   createdAt: string;
+};
+
+export type ClassroomEnrollmentStatus = 'enrolled' | 'waitlisted';
+
+export type ClassroomEnrollment = {
+  id: number;
+  studentId: number;
+  classroomId: number;
+  status: ClassroomEnrollmentStatus;
+  registeredAt: string;
+};
+
+export type ClassroomAvailability = Classroom & {
+  seatsFilled: number;
+  seatsAvailable: number;
+  isFull: boolean;
 };
 
 export type FeePayment = {

@@ -22,7 +22,8 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { fetchStudentDashboard } from '@/lib/db';
+import { fetchStudentDashboard, listAvailableClassrooms } from '@/lib/db';
+import ClassroomSelfRegistrationCard from '@/components/student/ClassroomSelfRegistrationCard';
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded';
 import EventNoteRoundedIcon from '@mui/icons-material/EventNoteRounded';
 import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
@@ -81,6 +82,8 @@ export default async function DashboardPage() {
     );
   }
 
+  const availableClassrooms = await listAvailableClassrooms();
+
   const {
     student,
     timetable,
@@ -90,7 +93,8 @@ export default async function DashboardPage() {
     upcomingExams,
     gpaBySemester,
     registrationWindows,
-    fees
+    fees,
+    classroomEnrollments
   } = dashboard;
 
   const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -644,6 +648,16 @@ export default async function DashboardPage() {
                       </Stack>
                     </Paper>
                   </Stack>
+                </Grid>
+              </Grid>
+
+              <Grid container spacing={3}>
+                <Grid item xs={12}>
+                  <ClassroomSelfRegistrationCard
+                    studentId={student.id}
+                    classrooms={availableClassrooms}
+                    enrollments={classroomEnrollments}
+                  />
                 </Grid>
               </Grid>
             </Stack>

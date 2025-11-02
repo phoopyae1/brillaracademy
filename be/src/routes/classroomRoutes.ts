@@ -1,7 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireStaff, type AuthenticatedRequest } from '../middleware/requireStaff.js';
-import { createClassroom, listClassrooms } from '../services/classroomService.js';
+import {
+  createClassroom,
+  listClassrooms,
+  listClassroomsWithAvailability,
+  registerStudentForClassroom
+} from '../services/classroomService.js';
 
 const router = Router();
 
@@ -10,11 +15,20 @@ router.get('/', requireStaff(['IT_ADMIN']), async (_req, res) => {
   res.json({ classrooms });
 });
 
+router.get('/public/available', async (_req, res) => {
+  const classrooms = await listClassroomsWithAvailability();
+  res.json({ classrooms });
+});
+
 const createClassroomSchema = z.object({
   name: z.string().min(1),
   location: z.string().min(1),
   capacity: z.coerce.number().int().positive(),
   resources: z.array(z.string().min(1)).optional()
+});
+
+const classroomSelfRegistrationSchema = z.object({
+  studentId: z.coerce.number().int().positive()
 });
 
 router.post('/', requireStaff(['IT_ADMIN']), async (req: AuthenticatedRequest, res) => {
@@ -30,6 +44,30 @@ router.post('/', requireStaff(['IT_ADMIN']), async (req: AuthenticatedRequest, r
   } catch (error: any) {
     console.error('Failed to create classroom', error);
     res.status(500).json({ error: 'Unable to create classroom right now.' });
+  }
+});
+
+router.post('/:id/self-registrations', async (req, res) => {
+  const classroomId = Number(req.params.id);
+
+  if (!Number.isFinite(classroomId)) {
+    return res.status(400).json({ error: 'Invalid classroom id.' });
+  }
+
+  const parseResult = classroomSelfRegistrationSchema.safeParse(req.body);
+
+  if (!parseResult.success) {
+    return res
+      .status(400)
+      .json({ error: 'Invalid registration payload.', details: parseResult.error.flatten() });
+  }
+
+  try {
+    const enrollment = await registerStudentForClassroom(parseResult.data.studentId, classroomId);
+    res.status(201).json({ enrollment });
+  } catch (error: any) {
+    const message = typeof error?.message === 'string' ? error.message : 'Unable to register for this classroom right now.';
+    res.status(400).json({ error: message });
   }
 });
 
