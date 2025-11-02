@@ -14,18 +14,14 @@ import Divider from '@mui/material/Divider';
 import Stack from '@mui/material/Stack';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
-
-export const metadata = {
-  title: 'Login | Brillar Academy',
-  description: 'Access your Brillar Academy dashboard with a secure, student-focused login experience.'
-};
+import { authenticateStudent } from '@/lib/db';
 
 type FormState = {
   status: 'idle' | 'submitting' | 'error';
   message: string;
 };
 
-export default function LoginPage() {
+export default function LoginPageContent() {
   const router = useRouter();
   const [formState, setFormState] = useState<FormState>({ status: 'idle', message: '' });
 
@@ -43,25 +39,13 @@ export default function LoginPage() {
     }
 
     try {
-      const response = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
+      const student = await authenticateStudent(email, password);
 
-      const payload = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? 'Unable to sign you in right now.');
+      if (!student?.id) {
+        throw new Error('Invalid credentials or missing student profile.');
       }
 
-      const studentId = payload?.student?.id;
-
-      if (!studentId) {
-        throw new Error('Login succeeded but the student profile was missing.');
-      }
-
-      router.push(`/dashboard?studentId=${studentId}`);
+      router.push(`/dashboard?studentId=${student.id}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unexpected error during login.';
       setFormState({ status: 'error', message });
@@ -147,3 +131,4 @@ export default function LoginPage() {
     </Box>
   );
 }
+

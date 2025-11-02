@@ -1,6 +1,6 @@
 # Brillar Academy Platform
 
-A minimal, beautiful academic experience crafted with Next.js App Router, Material UI, and PostgreSQL.
+A full-stack academic experience with a dedicated Next.js front end, an Express-based Node.js API, and PostgreSQL persistence.
 
 ## ✨ Highlights
 - Clean, responsive landing page presenting the thirteen foundational pillars of Brillar Academy.
@@ -9,10 +9,10 @@ A minimal, beautiful academic experience crafted with Next.js App Router, Materi
 - PostgreSQL-backed feature catalogue with graceful fallback data for local exploration.
 
 ## 🧰 Tech Stack
-- **Framework:** Next.js 14 (App Router)
-- **UI Library:** Material UI 5 with Emotion styling
-- **Database:** PostgreSQL (via the official `pg` driver)
-- **Language:** TypeScript
+- **Front end:** Next.js 14 (App Router) with Material UI 5
+- **Back end:** Express 4 with TypeScript, JWT staff sessions, and `pg`
+- **Database:** PostgreSQL with SQL schema and seed scripts
+- **Language:** TypeScript throughout
 
 ## 🚀 Getting Started
 
@@ -22,34 +22,63 @@ A minimal, beautiful academic experience crafted with Next.js App Router, Materi
 
 ### 1. Install dependencies
 ```bash
-npm install
+(cd fe && npm install)
+(cd be && npm install)
 ```
 
 ### 2. Configure environment variables
-Copy the example environment file and update the database connection string if needed.
+Copy the example environment files and update the connection details if needed.
 ```bash
-cp .env.example .env.local
+cp fe/.env.example fe/.env.local
+cp be/.env.example be/.env
 ```
 
 ### 3. Prepare the database
 Create a database (e.g., `brillaracademy`) and run the schema & seed scripts.
 ```bash
-psql "$DATABASE_URL" -f db/schema.sql
-psql "$DATABASE_URL" -f db/seed.sql
+psql "$DATABASE_URL" -f be/db/schema.sql
+psql "$DATABASE_URL" -f be/db/seed.sql
 ```
 
-### 4. Start the development server
+### 4. Start the development servers
+In separate terminals run:
+
 ```bash
+cd be
 npm run dev
 ```
-Then open [http://localhost:3000](http://localhost:3000) to view the experience.
+
+```bash
+cd fe
+npm run dev
+```
+
+Then open [http://localhost:3000](http://localhost:3000) for the front end. The API listens on [http://localhost:4000](http://localhost:4000) by default.
+
+## 🧱 Express API overview
+
+The backend lives in [`be/`](be/) and is a TypeScript Express application. The `createApp` factory in [`be/src/app.ts`](be/src/app.ts) wires middleware (CORS, JSON parsing, logging) and mounts the following route groups under the `/api` prefix:
+
+- `POST /api/login` – student authentication
+- `POST /api/admin/login` – IT admin / staff authentication with JWT responses
+- `GET /api/features` – feature catalogue for the landing page
+- `GET /api/students/public/all` – read-only listing used before authentication
+- `GET /api/students` – secured student directory for staff members
+- `POST /api/students` – IT admins and student office staff can provision accounts
+- `GET /api/students/:id/dashboard` – aggregated dashboard data for a student
+- `GET /api/staff` / `POST /api/staff` – IT admins manage staff accounts
+
+The entry point in [`be/src/index.ts`](be/src/index.ts) loads environment variables, ensures the initial IT admin account exists, and then calls `app.listen` so the service is ready for the frontend to consume.
 
 ## 🗂️ Project Structure
 ```
-app/            # Next.js App Router routes and global styles
-components/     # Reusable presentation components
-lib/            # Theme configuration and database helpers
-db/             # SQL schema and seed files
+be/                 # Express API with TypeScript source, routes, and DB scripts
+  db/               # SQL schema and seed files
+  src/              # API entrypoint, routes, services, and middleware
+fe/                 # Next.js App Router experience
+  app/              # Routes, layouts, and pages
+  components/       # Shared UI, segmented by admin/student domains
+  lib/              # API client helpers and theme configuration
 ```
 
 ## 📚 Feature Pillars

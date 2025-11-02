@@ -44,3 +44,13 @@ CREATE TABLE IF NOT EXISTS class_registrations (
     status TEXT NOT NULL DEFAULT 'registered',
     registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS staff_accounts (
+    id SERIAL PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by INTEGER REFERENCES staff_accounts(id)
+);
