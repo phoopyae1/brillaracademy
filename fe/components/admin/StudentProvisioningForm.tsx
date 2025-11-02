@@ -7,9 +7,10 @@ import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import TextField from '@mui/material/TextField';
 import Button from '@mui/material/Button';
-import Paper from '@mui/material/Paper';
 import CircularProgress from '@mui/material/CircularProgress';
 import Divider from '@mui/material/Divider';
+import Box from '@mui/material/Box';
+import { alpha } from '@mui/material/styles';
 
 import type { Student } from '@/lib/db';
 
@@ -61,7 +62,16 @@ export default function StudentProvisioningForm({ token, onStudentCreated, creat
   };
 
   return (
-    <Paper elevation={6} sx={{ borderRadius: 4, p: { xs: 4, md: 5 } }}>
+    <Box
+      sx={(theme) => ({
+        borderRadius: 5,
+        p: { xs: 4, md: 5 },
+        background: `linear-gradient(160deg, ${alpha(theme.palette.background.paper, 0.94)}, ${alpha(theme.palette.secondary.light, 0.28)})`,
+        border: `1px solid ${alpha(theme.palette.secondary.main, 0.2)}`,
+        boxShadow: `0 36px 70px ${alpha(theme.palette.secondary.main, 0.22)}`,
+        backdropFilter: 'blur(20px)',
+      })}
+    >
       <Stack spacing={3} component="form" ref={formRef} onSubmit={handleSubmit}>
         <Stack spacing={1}>
           <Typography variant="h5" fontWeight={700}>
@@ -93,7 +103,7 @@ export default function StudentProvisioningForm({ token, onStudentCreated, creat
           <TextField name="primaryInterest" label="Primary interest (optional)" fullWidth />
         </Stack>
 
-        <Divider sx={{ borderStyle: 'dashed' }} />
+        <Divider sx={{ borderStyle: 'dashed', borderColor: 'secondary.light', opacity: 0.5 }} />
 
         <Button
           type="submit"
@@ -105,6 +115,6 @@ export default function StudentProvisioningForm({ token, onStudentCreated, creat
           {status === 'submitting' ? 'Creating account…' : 'Create student account'}
         </Button>
       </Stack>
-    </Paper>
+    </Box>
   );
 }

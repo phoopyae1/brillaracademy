@@ -4,7 +4,6 @@ import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import Grid from '@mui/material/Grid';
-import Paper from '@mui/material/Paper';
 import TextField from '@mui/material/TextField';
 import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
@@ -13,19 +12,22 @@ import MenuItem from '@mui/material/MenuItem';
 import FormControl from '@mui/material/FormControl';
 import Select from '@mui/material/Select';
 import Alert from '@mui/material/Alert';
+import { alpha } from '@mui/material/styles';
 
 export default function StudentPortalSection() {
   return (
     <Box
       component="section"
-      sx={{
+      sx={(theme) => ({
         width: '100%',
-        backgroundColor: 'white',
-        borderRadius: 4,
-        boxShadow: 3,
+        background: `linear-gradient(140deg, ${alpha(theme.palette.background.default, 0.85)}, ${alpha(theme.palette.primary.light, 0.28)})`,
+        borderRadius: 5,
+        border: `1px solid ${alpha(theme.palette.primary.main, 0.18)}`,
+        boxShadow: `0 45px 90px ${alpha(theme.palette.primary.main, 0.2)}`,
         px: { xs: 3, md: 6 },
         py: { xs: 4, md: 6 },
-      }}
+        backdropFilter: 'blur(22px)',
+      })}
     >
       <Stack spacing={4}>
         <Stack spacing={1} textAlign={{ xs: 'center', md: 'left' }}>
@@ -42,18 +44,19 @@ export default function StudentPortalSection() {
 
         <Grid container spacing={4}>
           <Grid item xs={12} md={5}>
-            <Paper
-              elevation={0}
-              sx={{
+            <Box
+              sx={(theme) => ({
                 height: '100%',
-                borderRadius: 3,
-                border: '1px solid',
-                borderColor: 'divider',
+                borderRadius: 4,
                 p: { xs: 3, md: 4 },
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 3,
-              }}
+                background: `linear-gradient(150deg, ${alpha(theme.palette.background.paper, 0.9)}, ${alpha(theme.palette.primary.light, 0.25)})`,
+                border: `1px solid ${alpha(theme.palette.primary.main, 0.16)}`,
+                boxShadow: `0 28px 60px ${alpha(theme.palette.primary.main, 0.18)}`,
+                backdropFilter: 'blur(18px)',
+              })}
             >
               <Stack spacing={1}>
                 <Typography variant="h6">Student Login</Typography>
@@ -68,27 +71,28 @@ export default function StudentPortalSection() {
                 <Button variant="contained" size="large">Sign In</Button>
                 <Stack spacing={1}>
                   <Button variant="text" size="small" sx={{ px: 0, alignSelf: 'flex-start' }}>Forgot password?</Button>
-                  <Alert severity="info" sx={{ borderRadius: 2 }}>
+                  <Alert severity="info" sx={{ borderRadius: 2, bgcolor: 'transparent', border: `1px solid`, borderColor: 'primary.light' }}>
                     Accounts are created by the Student Administrative Office. Contact admin-office@brillaracademy.edu to request
                     access.
                   </Alert>
                 </Stack>
               </Stack>
-            </Paper>
+            </Box>
           </Grid>
 
           <Grid item xs={12} md={7}>
-            <Paper
-              elevation={0}
-              sx={{
-                borderRadius: 3,
-                border: '1px solid',
-                borderColor: 'divider',
+            <Box
+              sx={(theme) => ({
+                borderRadius: 4,
                 p: { xs: 3, md: 4 },
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 3,
-              }}
+                background: `linear-gradient(150deg, ${alpha(theme.palette.background.paper, 0.9)}, ${alpha(theme.palette.secondary.light, 0.25)})`,
+                border: `1px solid ${alpha(theme.palette.secondary.main, 0.18)}`,
+                boxShadow: `0 28px 60px ${alpha(theme.palette.secondary.main, 0.18)}`,
+                backdropFilter: 'blur(18px)',
+              })}
             >
               <Stack spacing={1}>
                 <Typography variant="h6">Quick Class Registration</Typography>
@@ -133,7 +137,8 @@ export default function StudentPortalSection() {
                     <Button
                       variant="outlined"
                       sx={{
-                        width: { xs: '100%', sm: 'auto' }
+                        width: { xs: '100%', sm: 'auto' },
+                        borderColor: 'secondary.light',
                       }}
                     >
                       Save draft
@@ -150,7 +155,7 @@ export default function StudentPortalSection() {
                   </Stack>
                 </Stack>
               </Stack>
-            </Paper>
+            </Box>
           </Grid>
         </Grid>
       </Stack>
