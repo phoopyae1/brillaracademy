@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { cookies } from 'next/headers';
 import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
 import Container from '@mui/material/Container';
@@ -8,14 +9,7 @@ import Chip from '@mui/material/Chip';
 import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
 import Link from 'next/link';
-
-const navLinks = [
-  { label: 'Home', href: '/' },
-  { label: 'Student Dashboard', href: '/dashboard' },
-  { label: 'Forge Staff Portal', href: '/forge' },
-  { label: 'Provisioning Suite', href: '/admin' },
-  { label: 'Login', href: '/login' }
-];
+import StudentSessionControls from './StudentSessionControls';
 
 const highlightTags = [
   'Role-based dashboards',
@@ -30,6 +24,19 @@ type PortalChromeProps = {
 };
 
 export default function PortalChrome({ children }: PortalChromeProps) {
+  const cookieStore = cookies();
+  const studentIdCookie = cookieStore.get('brillar_student_id');
+  const studentNameCookie = cookieStore.get('brillar_student_name');
+  const isStudentLoggedIn = Boolean(studentIdCookie?.value);
+  const studentName = studentNameCookie?.value ? decodeURIComponent(studentNameCookie.value) : undefined;
+
+  const navLinks = [
+    { label: 'Home', href: '/' },
+    ...(isStudentLoggedIn ? [{ label: 'Student Dashboard', href: '/dashboard' }] : []),
+    { label: 'Forge Staff Portal', href: '/forge' },
+    { label: 'Provisioning Suite', href: '/admin' }
+  ];
+
   return (
     <Box
       sx={{
@@ -55,7 +62,7 @@ export default function PortalChrome({ children }: PortalChromeProps) {
             >
               Brillar Academy Portal
             </Typography>
-            <Stack direction="row" spacing={1} sx={{ ml: 'auto' }}>
+            <Stack direction="row" spacing={1.5} sx={{ ml: 'auto' }} alignItems="center">
               {navLinks.map((item) => (
                 <Button
                   key={item.href}
@@ -68,6 +75,7 @@ export default function PortalChrome({ children }: PortalChromeProps) {
                   {item.label}
                 </Button>
               ))}
+              <StudentSessionControls isLoggedIn={isStudentLoggedIn} studentName={studentName} />
             </Stack>
           </Toolbar>
         </Container>
