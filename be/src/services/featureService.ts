@@ -1,4 +1,4 @@
-import type { Feature } from './types';
+import type { Feature } from './types.js';
 import { getPool } from '../db/pool.js';
 import { fallbackFeatures } from './fallbackData.js';
 

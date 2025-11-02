@@ -10,6 +10,61 @@ export type Student = {
   createdAt: string;
 };
 
+export type GradeRecord = {
+  id: number;
+  studentId: number;
+  courseCode: string;
+  courseTitle: string;
+  semester: string;
+  grade: string;
+  credits: number;
+  recordedBy?: number | null;
+  recordedAt?: string;
+};
+
+export type ExamAnnouncement = {
+  id: number;
+  title: string;
+  description: string;
+  examDate: string;
+  postedBy: number | null;
+  createdAt: string;
+};
+
+export type SemesterGpa = {
+  id: number;
+  studentId: number;
+  semester: string;
+  gpa: number;
+};
+
+export type SemesterRegistrationCourse = {
+  courseCode: string;
+  courseTitle: string;
+  instructor: string;
+  credits: number;
+};
+
+export type SemesterRegistration = {
+  id: number;
+  semester: string;
+  status: 'upcoming' | 'open' | 'closed';
+  opensAt: string;
+  closesAt: string;
+  courses: SemesterRegistrationCourse[];
+};
+
+export type FeePayment = {
+  id: number;
+  studentId: number;
+  amount: number;
+  description: string | null;
+  status: 'pending' | 'paid';
+  receivedBy: number | null;
+  receivedAt: string;
+  dueDate: string | null;
+};
+
 export type StudentDashboardData = {
   student: Student;
   timetable: Array<{
@@ -37,6 +92,11 @@ export type StudentDashboardData = {
     status: string;
     registeredAt: string;
   }>;
+  grades: GradeRecord[];
+  upcomingExams: ExamAnnouncement[];
+  gpaBySemester: SemesterGpa[];
+  registrationWindows: SemesterRegistration[];
+  fees: FeePayment[];
 };
 
 export type StaffAccount = {
@@ -45,6 +105,62 @@ export type StaffAccount = {
   email: string;
   role: 'IT_ADMIN' | 'TEACHER' | 'STUDENT_ADMIN';
   createdAt: string;
+};
+
+export type Classroom = {
+  id: number;
+  name: string;
+  location: string;
+  capacity: number;
+  resources: string[];
+  createdBy: number | null;
+  createdAt: string;
+};
+
+export type TeacherScheduleSlot = {
+  assignmentId: number;
+  teacherId: number;
+  courseCode: string;
+  courseTitle: string;
+  weekday: string;
+  startTime: string;
+  endTime: string;
+  classroomName: string;
+  classroomLocation: string;
+  studentGroup: string;
+};
+
+export type TeacherRosterStudent = {
+  courseCode: string;
+  courseTitle: string;
+  studentId: number;
+  studentName: string;
+  status: 'enrolled' | 'waitlisted';
+};
+
+export type TeacherDashboard = {
+  teacher: StaffAccount;
+  schedule: TeacherScheduleSlot[];
+  rosters: TeacherRosterStudent[];
+  recentGrades: GradeRecord[];
+  focusTags: string[];
+};
+
+export type TeachingAssignment = {
+  id: number;
+  teacherId: number;
+  classroomId: number;
+  courseCode: string;
+  courseTitle: string;
+  weekday: string;
+  startTime: string;
+  endTime: string;
+  studentGroup: string;
+  assignedBy: number | null;
+  assignedAt: string;
+  classroomName?: string;
+  classroomLocation?: string;
+  teacherName?: string;
 };
 
 const DEFAULT_API_BASE_URL = 'http://localhost:4000/api';
@@ -213,4 +329,97 @@ export async function createStaff(
   });
 
   return data.staff;
+}
+
+export async function fetchTeacherDashboard(token: string, teacherId?: number): Promise<TeacherDashboard | null> {
+  const query = teacherId ? `?teacherId=${teacherId}` : '';
+  const data = await apiRequest<{ dashboard?: TeacherDashboard }>(`/teaching/dashboard${query}`, {
+    token
+  });
+
+  return data.dashboard ?? null;
+}
+
+export async function listTeachingAssignments(
+  token: string,
+  teacherId?: number
+): Promise<TeachingAssignment[]> {
+  const query = teacherId ? `?teacherId=${teacherId}` : '';
+  const data = await apiRequest<{ assignments?: TeachingAssignment[] }>(`/teaching/assignments${query}`, {
+    token
+  });
+
+  return data.assignments ?? [];
+}
+
+export async function createTeachingAssignment(
+  token: string,
+  input: {
+    teacherId: number;
+    classroomId: number;
+    courseCode: string;
+    courseTitle: string;
+    weekday: string;
+    startTime: string;
+    endTime: string;
+    studentGroup?: string;
+  }
+): Promise<TeachingAssignment> {
+  const data = await apiRequest<{ assignment: TeachingAssignment }>('/teaching/assignments', {
+    method: 'POST',
+    body: input,
+    token
+  });
+
+  return data.assignment;
+}
+
+export async function recordTeacherGrade(
+  token: string,
+  input: {
+    studentId: number;
+    courseCode: string;
+    courseTitle: string;
+    semester: string;
+    grade: string;
+    credits: number;
+  }
+): Promise<GradeRecord> {
+  const data = await apiRequest<{ grade: GradeRecord }>('/teaching/grades', {
+    method: 'POST',
+    body: input,
+    token
+  });
+
+  return data.grade;
+}
+
+export async function listClassrooms(token: string): Promise<Classroom[]> {
+  const data = await apiRequest<{ classrooms?: Classroom[] }>('/classrooms', {
+    token
+  });
+
+  return data.classrooms ?? [];
+}
+
+export async function listFeePayments(token: string, studentId?: number): Promise<FeePayment[]> {
+  const query = studentId ? `?studentId=${studentId}` : '';
+  const data = await apiRequest<{ payments?: FeePayment[] }>(`/finance/payments${query}`, {
+    token
+  });
+
+  return data.payments ?? [];
+}
+
+export async function recordFeePayment(
+  token: string,
+  input: { studentId: number; amount: number; description?: string; status?: 'pending' | 'paid'; dueDate?: string | null }
+): Promise<FeePayment> {
+  const data = await apiRequest<{ payment: FeePayment }>('/finance/payments', {
+    method: 'POST',
+    body: input,
+    token
+  });
+
+  return data.payment;
 }

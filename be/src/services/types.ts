@@ -42,6 +42,7 @@ export type ClassRegistration = {
   instructor: string | null;
   status: string;
   registeredAt: string;
+  semester?: string;
 };
 
 export type StudentDashboardData = {
@@ -49,6 +50,11 @@ export type StudentDashboardData = {
   timetable: TimetableEntry[];
   schedule: ScheduleItem[];
   registrations: ClassRegistration[];
+  grades: GradeRecord[];
+  upcomingExams: ExamAnnouncement[];
+  gpaBySemester: SemesterGpa[];
+  registrationWindows: SemesterRegistration[];
+  fees: FeePayment[];
 };
 
 export type CreateStudentInput = {
@@ -57,7 +63,7 @@ export type CreateStudentInput = {
   email: string;
   password: string;
   role?: string;
-  primaryInterest?: string;
+  primaryInterest?: string | null;
 };
 
 export type StaffRole = 'IT_ADMIN' | 'TEACHER' | 'STUDENT_ADMIN';
@@ -68,4 +74,119 @@ export type StaffAccount = {
   email: string;
   role: StaffRole;
   createdAt: string;
+};
+
+export type Classroom = {
+  id: number;
+  name: string;
+  location: string;
+  capacity: number;
+  resources: string[];
+  createdBy: number | null;
+  createdAt: string;
+};
+
+export type FeePayment = {
+  id: number;
+  studentId: number;
+  amount: number;
+  description: string | null;
+  status: 'pending' | 'paid';
+  receivedBy: number | null;
+  receivedAt: string;
+  dueDate: string | null;
+};
+
+export type GradeRecord = {
+  id: number;
+  studentId: number;
+  courseCode: string;
+  courseTitle: string;
+  semester: string;
+  grade: string;
+  credits: number;
+  recordedBy?: number | null;
+  recordedAt?: string;
+};
+
+export type ExamAnnouncement = {
+  id: number;
+  title: string;
+  description: string;
+  examDate: string;
+  postedBy: number | null;
+  createdAt: string;
+};
+
+export type SemesterGpa = {
+  id: number;
+  studentId: number;
+  semester: string;
+  gpa: number;
+};
+
+export type SemesterRegistrationCourse = {
+  courseCode: string;
+  courseTitle: string;
+  instructor: string;
+  credits: number;
+};
+
+export type SemesterRegistration = {
+  id: number;
+  semester: string;
+  status: 'upcoming' | 'open' | 'closed';
+  opensAt: string;
+  closesAt: string;
+  courses: SemesterRegistrationCourse[];
+};
+
+export type TeachingAssignment = {
+  id: number;
+  teacherId: number;
+  classroomId: number;
+  courseCode: string;
+  courseTitle: string;
+  weekday: string;
+  startTime: string;
+  endTime: string;
+  studentGroup: string;
+  assignedBy: number | null;
+  assignedAt: string;
+};
+
+export type TeacherScheduleSlot = {
+  assignmentId: number;
+  teacherId: number;
+  courseCode: string;
+  courseTitle: string;
+  weekday: string;
+  startTime: string;
+  endTime: string;
+  classroomName: string;
+  classroomLocation: string;
+  studentGroup: string;
+};
+
+export type TeacherRosterEntry = {
+  id: number;
+  teacherId: number;
+  courseCode: string;
+  courseTitle: string;
+  studentId: number;
+  status: 'enrolled' | 'waitlisted';
+};
+
+export type TeacherDashboardData = {
+  teacher: StaffAccount;
+  schedule: TeacherScheduleSlot[];
+  rosters: Array<{
+    courseCode: string;
+    courseTitle: string;
+    studentId: number;
+    studentName: string;
+    status: 'enrolled' | 'waitlisted';
+  }>;
+  recentGrades: GradeRecord[];
+  focusTags: string[];
 };
