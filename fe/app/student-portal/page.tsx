@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation';
+import StudentPortalPage from './StudentPortalPage';
 
 export const metadata = {
   title: 'Student Portal | Brillar Academy',
@@ -6,5 +6,5 @@ export const metadata = {
 };
 
 export default function Page() {
-  redirect('/student-portal');
+  return <StudentPortalPage />;
 }

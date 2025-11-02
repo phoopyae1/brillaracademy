@@ -69,7 +69,7 @@ export default function LoginPageContent() {
           document.cookie = `brillar_student_name=${encodeURIComponent(fullName)}; path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax`;
         }
 
-        router.push('/dashboard');
+        router.push('/student-portal');
         router.refresh();
         return;
       }
