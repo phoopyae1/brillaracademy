@@ -120,6 +120,7 @@ export default function StudentSelfRegistrationForm({ majors }: StudentSelfRegis
       setSelectedSubjects([]);
       event.currentTarget.reset();
     } catch (error: any) {
+      console.error('Registration error:', error);
       const errorMessage = typeof error?.message === 'string' ? error.message : 'Unable to create your account right now.';
       setFormStatus('error');
       setMessage(errorMessage);
