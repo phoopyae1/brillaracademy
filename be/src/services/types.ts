@@ -173,6 +173,7 @@ export type TeachingAssignment = {
   startTime: string;
   endTime: string;
   studentGroup: string;
+  majorFocus: string;
   assignedBy: number | null;
   assignedAt: string;
 };
@@ -188,6 +189,7 @@ export type TeacherScheduleSlot = {
   classroomName: string;
   classroomLocation: string;
   studentGroup: string;
+  majorFocus: string;
 };
 
 export type TeacherRosterEntry = {

@@ -14,9 +14,12 @@ import { listClassrooms } from './classroomService.js';
 import { listStudents } from './studentService.js';
 import { findStaffById } from './staffService.js';
 import { listTeacherGrades } from './academicService.js';
-import { getSubjectsForMajor } from '../utils/majors.js';
+import { registerSubjectForMajor } from '../utils/majors.js';
 
 let inMemoryAssignments = [...fallbackTeachingAssignments];
+for (const assignment of inMemoryAssignments) {
+  registerSubjectForMajor(assignment.majorFocus, assignment.courseTitle);
+}
 let inMemoryRosters = [...fallbackTeacherRosters];
 let nextAssignmentId = fallbackTeachingAssignments.length + 1;
 
@@ -31,6 +34,7 @@ function normalizeAssignment(row: any): TeachingAssignment {
     startTime: row.start_time,
     endTime: row.end_time,
     studentGroup: row.student_group,
+    majorFocus: row.major_focus ?? row.majorFocus ?? 'Undeclared',
     assignedBy: row.assigned_by ?? null,
     assignedAt: row.assigned_at instanceof Date ? row.assigned_at.toISOString() : row.assigned_at
   };
@@ -56,12 +60,17 @@ export async function listTeachingAssignments(): Promise<TeachingAssignment[]> {
 
   try {
     const { rows } = await pool.query(
-      `SELECT id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, assigned_by, assigned_at
+      `SELECT id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, assigned_by, assigned_at
        FROM teaching_assignments
        ORDER BY assigned_at DESC`
     );
 
-    return rows.map(normalizeAssignment);
+    const assignments = rows.map(normalizeAssignment);
+    assignments.forEach((assignment) => {
+      registerSubjectForMajor(assignment.majorFocus, assignment.courseTitle);
+    });
+
+    return assignments;
   } catch (error) {
     console.error('Failed to fetch teaching assignments from database', error);
     return [...inMemoryAssignments];
@@ -77,14 +86,19 @@ export async function listTeachingAssignmentsForTeacher(teacherId: number): Prom
 
   try {
     const { rows } = await pool.query(
-      `SELECT id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, assigned_by, assigned_at
+      `SELECT id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, assigned_by, assigned_at
        FROM teaching_assignments
        WHERE teacher_id = $1
        ORDER BY start_time ASC`,
       [teacherId]
     );
 
-    return rows.map(normalizeAssignment);
+    const assignments = rows.map(normalizeAssignment);
+    assignments.forEach((assignment) => {
+      registerSubjectForMajor(assignment.majorFocus, assignment.courseTitle);
+    });
+
+    return assignments;
   } catch (error) {
     console.error('Failed to fetch teaching assignments for teacher', error);
     return inMemoryAssignments.filter((assignment) => assignment.teacherId === teacherId);
@@ -100,6 +114,7 @@ export type CreateTeachingAssignmentInput = {
   startTime: string;
   endTime: string;
   studentGroup?: string;
+  majorFocus: string;
 };
 
 export async function assignTeacherToClassroom(
@@ -108,6 +123,7 @@ export async function assignTeacherToClassroom(
 ): Promise<TeachingAssignment> {
   const pool = getPool();
   const studentGroup = input.studentGroup ?? 'Core Cohort';
+  registerSubjectForMajor(input.majorFocus, input.courseTitle);
   const assignedAt = new Date().toISOString();
 
   if (!pool) {
@@ -121,6 +137,7 @@ export async function assignTeacherToClassroom(
       startTime: input.startTime,
       endTime: input.endTime,
       studentGroup,
+      majorFocus: input.majorFocus,
       assignedBy: assignedBy ?? null,
       assignedAt
     };
@@ -131,9 +148,9 @@ export async function assignTeacherToClassroom(
 
   try {
     const { rows } = await pool.query(
-      `INSERT INTO teaching_assignments (teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, assigned_by, assigned_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       RETURNING id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, assigned_by, assigned_at`,
+      `INSERT INTO teaching_assignments (teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, assigned_by, assigned_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, assigned_by, assigned_at`,
       [
         input.teacherId,
         input.classroomId,
@@ -143,6 +160,7 @@ export async function assignTeacherToClassroom(
         input.startTime,
         input.endTime,
         studentGroup,
+        input.majorFocus,
         assignedBy ?? null,
         assignedAt
       ]
@@ -153,11 +171,7 @@ export async function assignTeacherToClassroom(
     // Auto-enroll students with matching majors
     try {
       const allStudents = await listStudents();
-      const relevantStudents = allStudents.filter((student) => {
-        if (!student.primaryInterest) return false;
-        const subjectsForMajor = getSubjectsForMajor(student.primaryInterest);
-        return subjectsForMajor.includes(input.courseTitle);
-      });
+      const relevantStudents = allStudents.filter((student) => student.primaryInterest === assignment.majorFocus);
 
       for (const student of relevantStudents) {
         // Check if already enrolled
@@ -192,6 +206,7 @@ export async function assignTeacherToClassroom(
       startTime: input.startTime,
       endTime: input.endTime,
       studentGroup,
+      majorFocus: input.majorFocus,
       assignedBy: assignedBy ?? null,
       assignedAt
     };
@@ -269,7 +284,8 @@ export async function buildTeacherDashboard(teacherId: number): Promise<TeacherD
         endTime: assignment.endTime,
         classroomName: classroom?.name ?? 'TBA',
         classroomLocation: classroom?.location ?? 'To be assigned',
-        studentGroup: assignment.studentGroup
+        studentGroup: assignment.studentGroup,
+        majorFocus: assignment.majorFocus
       };
     })
   );

@@ -175,11 +175,11 @@ SET semester = EXCLUDED.semester,
     closes_at = EXCLUDED.closes_at,
     courses = EXCLUDED.courses;
 
-INSERT INTO teaching_assignments (id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, assigned_by, assigned_at)
+INSERT INTO teaching_assignments (id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, assigned_by, assigned_at)
 VALUES
-    (1, 2, 1, 'BIOE-521', 'Advanced Bioinstrumentation', 'Monday', '09:00', '10:15', 'Biomedical Cohort A', 1, '2024-08-08T14:00:00Z'),
-    (2, 2, 3, 'DATA-610', 'Bayesian Machine Learning', 'Wednesday', '13:00', '14:15', 'Data Science Scholars', 1, '2024-08-08T14:30:00Z'),
-    (3, 2, 2, 'CHEM-540', 'Organic Synthesis Lab', 'Thursday', '14:30', '16:00', 'Advanced Chem Labs', 1, '2024-08-08T15:00:00Z')
+    (1, 2, 1, 'BIOE-521', 'Advanced Bioinstrumentation', 'Monday', '09:00', '10:15', 'Biomedical Cohort A', 'Biomedical Engineering', 1, '2024-08-08T14:00:00Z'),
+    (2, 2, 3, 'DATA-610', 'Bayesian Machine Learning', 'Wednesday', '13:00', '14:15', 'Data Science Scholars', 'Data Science', 1, '2024-08-08T14:30:00Z'),
+    (3, 2, 2, 'CHEM-540', 'Organic Synthesis Lab', 'Thursday', '14:30', '16:00', 'Advanced Chem Labs', 'Environmental Science', 1, '2024-08-08T15:00:00Z')
 ON CONFLICT (id) DO UPDATE
 SET teacher_id = EXCLUDED.teacher_id,
     classroom_id = EXCLUDED.classroom_id,
@@ -189,6 +189,7 @@ SET teacher_id = EXCLUDED.teacher_id,
     start_time = EXCLUDED.start_time,
     end_time = EXCLUDED.end_time,
     student_group = EXCLUDED.student_group,
+    major_focus = EXCLUDED.major_focus,
     assigned_by = EXCLUDED.assigned_by,
     assigned_at = EXCLUDED.assigned_at;
 
