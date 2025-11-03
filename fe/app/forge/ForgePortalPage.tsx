@@ -1039,6 +1039,69 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, onCreate
           </Table>
         </Stack>
       </Paper>
+
+      <Paper elevation={0} sx={{  border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+        <Stack spacing={2}>
+          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
+            <Box>
+              <Typography variant="h6" fontWeight={700}>
+                All classrooms
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                View all available classrooms on campus.
+              </Typography>
+            </Box>
+          </Stack>
+
+          <Table size="medium">
+            <TableHead>
+              <TableRow>
+                <TableCell>Name</TableCell>
+                <TableCell>Location</TableCell>
+                <TableCell>Capacity</TableCell>
+                <TableCell>Resources</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {classrooms.map((room) => (
+                <TableRow key={room.id}>
+                  <TableCell>
+                    <Typography fontWeight={600}>{room.name}</Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" color="text.secondary">
+                      {room.location}
+                    </Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2">{room.capacity}</Typography>
+                  </TableCell>
+                  <TableCell>
+                    {room.resources && room.resources.length > 0 ? (
+                      <Stack direction="row" spacing={0.5} flexWrap="wrap">
+                        {room.resources.map((resource, idx) => (
+                          <Chip key={idx} label={resource} size="small" variant="outlined" />
+                        ))}
+                      </Stack>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        —
+                      </Typography>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!classrooms.length && (
+                <TableRow>
+                  <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                    No classrooms have been created yet.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Stack>
+      </Paper>
     </Stack>
   );
 }

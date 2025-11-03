@@ -20,8 +20,8 @@ SET name = EXCLUDED.name,
 
 INSERT INTO students (id, first_name, last_name, email, password_hash, role, primary_interest)
 VALUES
-    (1, 'Aaliyah', 'Gupta', 'aaliyah.gupta@example.edu', 'f35c3c028c31e04bb4e5f8459825d2567307db506e54b13bce33d6fc392851ee', 'Student', 'Biomedical Engineering'),
-    (2, 'Mateo', 'Santos', 'mateo.santos@example.edu', 'f35c3c028c31e04bb4e5f8459825d2567307db506e54b13bce33d6fc392851ee', 'Student', 'Data Science')
+    (1, 'Aaliyah', 'Gupta', 'aaliyah.gupta@example.edu', '$2a$10$nL8DH4FX53TBjccqOUFtkucOoZPdbdd/f4SXMxv8ENjS/pUadeUX2', 'Student', 'Biomedical Engineering'),
+    (2, 'Mateo', 'Santos', 'mateo.santos@example.edu', '$2a$10$nL8DH4FX53TBjccqOUFtkucOoZPdbdd/f4SXMxv8ENjS/pUadeUX2', 'Student', 'Data Science')
 ON CONFLICT (id) DO UPDATE
 SET first_name = EXCLUDED.first_name,
     last_name = EXCLUDED.last_name,
@@ -32,12 +32,12 @@ SET first_name = EXCLUDED.first_name,
 
 INSERT INTO timetables (id, student_id, weekday, start_time, end_time, subject, location)
 VALUES
-    (1, 1, 'Monday', '09:00', '10:15', 'Organic Chemistry Lab', 'Science Center 204'),
-    (2, 1, 'Tuesday', '11:00', '12:15', 'Biomechanics Seminar', 'Innovation Hub 3A'),
-    (3, 1, 'Thursday', '14:00', '15:30', 'Community Health Project', 'Wellness Studio'),
-    (4, 2, 'Monday', '10:30', '11:45', 'Machine Learning', 'Tech Hall 201'),
-    (5, 2, 'Wednesday', '13:00', '14:15', 'Human-Centered Data Viz', 'Design Loft'),
-    (6, 2, 'Friday', '09:30', '11:00', 'Capstone Studio', 'Analytics Lab')
+    (1, 1, 'Monday', '09:00', '10:15', 'Global Health Innovation Lab', 'North Campus - Building B'),
+    (2, 1, 'Tuesday', '11:00', '12:15', 'Neuroscience Frontiers', 'Main Campus - Innovation Hub'),
+    (3, 1, 'Thursday', '14:00', '15:30', 'Community Health Project', 'South Campus - Health Center'),
+    (4, 2, 'Monday', '10:30', '11:45', 'Advanced Data Ethics', 'Tech Hall 201'),
+    (5, 2, 'Wednesday', '13:00', '14:15', 'Immersive Visualization Studio', 'Analytics Lab 410'),
+    (6, 2, 'Friday', '09:30', '11:00', 'Capstone Studio', 'Main Campus - Tech Tower')
 ON CONFLICT (id) DO UPDATE
 SET student_id = EXCLUDED.student_id,
     weekday = EXCLUDED.weekday,
@@ -59,17 +59,20 @@ SET student_id = EXCLUDED.student_id,
     start_time = EXCLUDED.start_time,
     end_time = EXCLUDED.end_time;
 
-INSERT INTO class_registrations (id, student_id, class_name, instructor, status, registered_at)
+INSERT INTO class_registrations (id, student_id, class_name, instructor, status, semester, credits, confirmed_by, registered_at)
 VALUES
-    (1, 1, 'Global Health Innovation Lab', 'Dr. Priya Raman', 'registered', '2024-08-15T13:00:00Z'),
-    (2, 1, 'Neuroscience Frontiers', 'Professor Malik Chen', 'waitlisted', '2024-08-16T09:30:00Z'),
-    (3, 2, 'Advanced Data Ethics', 'Dr. Leila Morgan', 'registered', '2024-08-14T10:45:00Z'),
-    (4, 2, 'Immersive Visualization Studio', 'Professor Aaron Patel', 'registered', '2024-08-17T11:15:00Z')
+    (1, 1, 'Global Health Innovation Lab', 'Dr. Priya Raman', 'registered', 'Fall 2024', 3, 1, '2024-08-15T13:00:00Z'),
+    (2, 1, 'Neuroscience Frontiers', 'Professor Malik Chen', 'waitlisted', 'Fall 2024', 4, NULL, '2024-08-16T09:30:00Z'),
+    (3, 2, 'Advanced Data Ethics', 'Dr. Leila Morgan', 'registered', 'Fall 2024', 3, 1, '2024-08-14T10:45:00Z'),
+    (4, 2, 'Immersive Visualization Studio', 'Professor Aaron Patel', 'registered', 'Fall 2024', 4, NULL, '2024-08-17T11:15:00Z')
 ON CONFLICT (id) DO UPDATE
 SET student_id = EXCLUDED.student_id,
     class_name = EXCLUDED.class_name,
     instructor = EXCLUDED.instructor,
     status = EXCLUDED.status,
+    semester = EXCLUDED.semester,
+    credits = EXCLUDED.credits,
+    confirmed_by = EXCLUDED.confirmed_by,
     registered_at = EXCLUDED.registered_at;
 
 INSERT INTO classrooms (id, name, location, capacity, resources, created_by, created_at)
@@ -94,3 +97,110 @@ SET classroom_id = EXCLUDED.classroom_id,
     student_id = EXCLUDED.student_id,
     status = EXCLUDED.status,
     registered_at = EXCLUDED.registered_at;
+
+INSERT INTO staff_accounts (id, display_name, email, password_hash, role, created_at)
+VALUES
+    (1, 'Ada Lovelace', 'it-admin@brillaracademy.edu', '$2a$10$nL8DH4FX53TBjccqOUFtkucOoZPdbdd/f4SXMxv8ENjS/pUadeUX2', 'IT_ADMIN', '2024-08-01T09:00:00Z'),
+    (2, 'Grace Hopper', 'faculty@brillaracademy.edu', '$2a$10$nL8DH4FX53TBjccqOUFtkucOoZPdbdd/f4SXMxv8ENjS/pUadeUX2', 'TEACHER', '2024-08-01T10:00:00Z'),
+    (3, 'Mary Johnson', 'admin-office@brillaracademy.edu', '$2a$10$nL8DH4FX53TBjccqOUFtkucOoZPdbdd/f4SXMxv8ENjS/pUadeUX2', 'STUDENT_ADMIN', '2024-08-01T11:15:00Z')
+ON CONFLICT (id) DO UPDATE
+SET display_name = EXCLUDED.display_name,
+    email = EXCLUDED.email,
+    password_hash = EXCLUDED.password_hash,
+    role = EXCLUDED.role,
+    created_at = EXCLUDED.created_at;
+
+INSERT INTO fee_payments (id, student_id, amount, description, status, received_by, received_at, due_date)
+VALUES
+    (1, 1, 1200.00, 'Global Health Innovation Lab - Registration Fee', 'pending', NULL, '2024-08-20T00:00:00Z', '2024-09-15T00:00:00Z'),
+    (2, 1, 850.00, 'Neuroscience Frontiers - Class Fee', 'pending', NULL, '2024-08-20T00:00:00Z', '2024-09-15T00:00:00Z'),
+    (3, 2, 1500.00, 'Advanced Data Ethics - Registration Fee', 'pending', NULL, '2024-08-21T00:00:00Z', '2024-09-15T00:00:00Z'),
+    (4, 2, 1800.00, 'Immersive Visualization Studio - Class Fee', 'paid', 3, '2024-08-21T13:45:00Z', '2024-09-15T00:00:00Z'),
+    (5, 2, 450.00, 'Student Wellness Pass', 'pending', NULL, '2024-08-25T00:00:00Z', '2024-09-10T00:00:00Z')
+ON CONFLICT (id) DO UPDATE
+SET student_id = EXCLUDED.student_id,
+    amount = EXCLUDED.amount,
+    description = EXCLUDED.description,
+    status = EXCLUDED.status,
+    received_by = EXCLUDED.received_by,
+    received_at = EXCLUDED.received_at,
+    due_date = EXCLUDED.due_date;
+
+INSERT INTO grade_records (id, student_id, course_code, course_title, semester, grade, credits, recorded_by, recorded_at)
+VALUES
+    (1, 1, 'BIOE-521', 'Advanced Bioinstrumentation', 'Spring 2024', 'A', 3, 2, '2024-05-10T15:00:00Z'),
+    (2, 1, 'CHEM-540', 'Organic Synthesis Lab', 'Spring 2024', 'A-', 4, 2, '2024-05-10T15:05:00Z'),
+    (3, 2, 'DATA-610', 'Bayesian Machine Learning', 'Spring 2024', 'A', 3, 2, '2024-05-12T14:40:00Z'),
+    (4, 2, 'STAT-575', 'Responsible AI Fieldwork', 'Spring 2024', 'A-', 2, 2, '2024-05-12T14:45:00Z')
+ON CONFLICT (id) DO UPDATE
+SET student_id = EXCLUDED.student_id,
+    course_code = EXCLUDED.course_code,
+    course_title = EXCLUDED.course_title,
+    semester = EXCLUDED.semester,
+    grade = EXCLUDED.grade,
+    credits = EXCLUDED.credits,
+    recorded_by = EXCLUDED.recorded_by,
+    recorded_at = EXCLUDED.recorded_at;
+
+INSERT INTO exam_announcements (id, title, description, exam_date, posted_by, created_at)
+VALUES
+    (1, 'Fall 2024 Midterm Week', 'Midterm examinations for all core courses will take place between October 14-18. Detailed schedules will be shared in course portals.', '2024-10-14T13:00:00Z', 1, '2024-08-18T10:00:00Z'),
+    (2, 'Capstone Final Presentations', 'Capstone cohorts will present their final projects on December 5 in the Innovation Hub.', '2024-12-05T15:00:00Z', 1, '2024-08-22T09:30:00Z')
+ON CONFLICT (id) DO UPDATE
+SET title = EXCLUDED.title,
+    description = EXCLUDED.description,
+    exam_date = EXCLUDED.exam_date,
+    posted_by = EXCLUDED.posted_by,
+    created_at = EXCLUDED.created_at;
+
+INSERT INTO semester_gpa (id, student_id, semester, gpa)
+VALUES
+    (1, 1, 'Fall 2023', 3.72),
+    (2, 1, 'Spring 2024', 3.88),
+    (3, 2, 'Fall 2023', 3.65),
+    (4, 2, 'Spring 2024', 3.74)
+ON CONFLICT (id) DO UPDATE
+SET student_id = EXCLUDED.student_id,
+    semester = EXCLUDED.semester,
+    gpa = EXCLUDED.gpa;
+
+INSERT INTO registration_windows (id, semester, status, opens_at, closes_at, courses)
+VALUES
+    (1, 'Fall 2024', 'open', '2024-08-10T12:00:00Z', '2024-09-10T23:59:59Z', '[{"courseCode":"BIOE-630","courseTitle":"Neural Interface Design","instructor":"Dr. Priya Raman","credits":3},{"courseCode":"DATA-720","courseTitle":"Responsible AI Systems","instructor":"Professor Malik Chen","credits":4}]'),
+    (2, 'Spring 2025', 'upcoming', '2024-11-15T12:00:00Z', '2025-01-10T23:59:59Z', '[{"courseCode":"BIOE-650","courseTitle":"Biomechatronics Studio","instructor":"Dr. Leila Morgan","credits":4},{"courseCode":"DATA-755","courseTitle":"Immersive Analytics Workshop","instructor":"Professor Aaron Patel","credits":3}]')
+ON CONFLICT (id) DO UPDATE
+SET semester = EXCLUDED.semester,
+    status = EXCLUDED.status,
+    opens_at = EXCLUDED.opens_at,
+    closes_at = EXCLUDED.closes_at,
+    courses = EXCLUDED.courses;
+
+INSERT INTO teaching_assignments (id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, assigned_by, assigned_at)
+VALUES
+    (1, 2, 1, 'BIOE-521', 'Advanced Bioinstrumentation', 'Monday', '09:00', '10:15', 'Biomedical Cohort A', 1, '2024-08-08T14:00:00Z'),
+    (2, 2, 3, 'DATA-610', 'Bayesian Machine Learning', 'Wednesday', '13:00', '14:15', 'Data Science Scholars', 1, '2024-08-08T14:30:00Z'),
+    (3, 2, 2, 'CHEM-540', 'Organic Synthesis Lab', 'Thursday', '14:30', '16:00', 'Advanced Chem Labs', 1, '2024-08-08T15:00:00Z')
+ON CONFLICT (id) DO UPDATE
+SET teacher_id = EXCLUDED.teacher_id,
+    classroom_id = EXCLUDED.classroom_id,
+    course_code = EXCLUDED.course_code,
+    course_title = EXCLUDED.course_title,
+    weekday = EXCLUDED.weekday,
+    start_time = EXCLUDED.start_time,
+    end_time = EXCLUDED.end_time,
+    student_group = EXCLUDED.student_group,
+    assigned_by = EXCLUDED.assigned_by,
+    assigned_at = EXCLUDED.assigned_at;
+
+INSERT INTO teacher_rosters (id, teacher_id, course_code, course_title, student_id, status)
+VALUES
+    (1, 2, 'BIOE-521', 'Advanced Bioinstrumentation', 1, 'enrolled'),
+    (2, 2, 'CHEM-540', 'Organic Synthesis Lab', 1, 'enrolled'),
+    (3, 2, 'DATA-610', 'Bayesian Machine Learning', 2, 'enrolled'),
+    (4, 2, 'STAT-575', 'Responsible AI Fieldwork', 2, 'waitlisted')
+ON CONFLICT (id) DO UPDATE
+SET teacher_id = EXCLUDED.teacher_id,
+    course_code = EXCLUDED.course_code,
+    course_title = EXCLUDED.course_title,
+    student_id = EXCLUDED.student_id,
+    status = EXCLUDED.status;

@@ -43,6 +43,8 @@ export type ClassRegistration = {
   status: string;
   registeredAt: string;
   semester?: string;
+  credits?: number;
+  confirmedBy?: number | null;
 };
 
 export type StudentDashboardData = {

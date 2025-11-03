@@ -38,11 +38,11 @@ export default function StudentProvisioningForm({ token, onStudentCreated, creat
     const lastName = formData.get('lastName')?.toString().trim();
     const email = formData.get('email')?.toString().trim();
     const password = formData.get('password')?.toString() ?? '';
-    const primaryInterest = formData.get('primaryInterest')?.toString().trim() ?? undefined;
+    const primaryInterest = formData.get('primaryInterest')?.toString().trim();
 
-    if (!firstName || !lastName || !email || !password) {
+    if (!firstName || !lastName || !email || !password || !primaryInterest) {
       setStatus('error');
-      setMessage('Please provide first name, last name, email, and a temporary password.');
+      setMessage('Please provide first name, last name, email, major, and a temporary password.');
       return;
     }
 
@@ -97,7 +97,7 @@ export default function StudentProvisioningForm({ token, onStudentCreated, creat
             fullWidth
             required
           />
-          <TextField name="primaryInterest" label="Primary interest (optional)" fullWidth />
+          <TextField name="primaryInterest" label="Major" fullWidth required />
         </Stack>
 
         <Divider sx={{ borderStyle: 'dashed', borderColor: 'secondary.light', opacity: 0.5 }} />

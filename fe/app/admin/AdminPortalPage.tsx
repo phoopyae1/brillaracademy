@@ -294,7 +294,7 @@ export default function AdminPortalPage() {
                         <TableRow>
                           <TableCell>Name</TableCell>
                           <TableCell>Email</TableCell>
-                          <TableCell>Interest</TableCell>
+                          <TableCell>Major</TableCell>
                           <TableCell>Created</TableCell>
                         </TableRow>
                       </TableHead>

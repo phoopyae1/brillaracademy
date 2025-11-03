@@ -91,6 +91,9 @@ export type StudentDashboardData = {
     instructor: string | null;
     status: string;
     registeredAt: string;
+    semester?: string;
+    credits?: number;
+    confirmedBy?: number | null;
   }>;
   classroomEnrollments: ClassroomEnrollment[];
   grades: GradeRecord[];

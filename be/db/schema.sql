@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS class_registrations (
     class_name TEXT NOT NULL,
     instructor TEXT,
     status TEXT NOT NULL DEFAULT 'registered',
+    semester TEXT,
+    credits INTEGER,
+    confirmed_by INTEGER REFERENCES staff_accounts(id),
     registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -72,4 +75,77 @@ CREATE TABLE IF NOT EXISTS staff_accounts (
     role TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_by INTEGER REFERENCES staff_accounts(id)
+);
+
+CREATE TABLE IF NOT EXISTS fee_payments (
+    id SERIAL PRIMARY KEY,
+    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    amount DECIMAL(10, 2) NOT NULL CHECK (amount >= 0),
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid')),
+    received_by INTEGER REFERENCES staff_accounts(id),
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    due_date TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS grade_records (
+    id SERIAL PRIMARY KEY,
+    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    course_code TEXT NOT NULL,
+    course_title TEXT NOT NULL,
+    semester TEXT NOT NULL,
+    grade TEXT NOT NULL,
+    credits INTEGER NOT NULL CHECK (credits > 0),
+    recorded_by INTEGER REFERENCES staff_accounts(id),
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS exam_announcements (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    exam_date TIMESTAMPTZ NOT NULL,
+    posted_by INTEGER REFERENCES staff_accounts(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS semester_gpa (
+    id SERIAL PRIMARY KEY,
+    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    semester TEXT NOT NULL,
+    gpa DECIMAL(3, 2) NOT NULL CHECK (gpa >= 0 AND gpa <= 4),
+    UNIQUE(student_id, semester)
+);
+
+CREATE TABLE IF NOT EXISTS registration_windows (
+    id SERIAL PRIMARY KEY,
+    semester TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'upcoming' CHECK (status IN ('upcoming', 'open', 'closed')),
+    opens_at TIMESTAMPTZ NOT NULL,
+    closes_at TIMESTAMPTZ NOT NULL,
+    courses JSONB NOT NULL DEFAULT '[]'::jsonb
+);
+
+CREATE TABLE IF NOT EXISTS teaching_assignments (
+    id SERIAL PRIMARY KEY,
+    teacher_id INTEGER NOT NULL REFERENCES staff_accounts(id) ON DELETE CASCADE,
+    classroom_id INTEGER NOT NULL REFERENCES classrooms(id) ON DELETE CASCADE,
+    course_code TEXT NOT NULL,
+    course_title TEXT NOT NULL,
+    weekday TEXT NOT NULL,
+    start_time TIME NOT NULL,
+    end_time TIME NOT NULL,
+    student_group TEXT,
+    assigned_by INTEGER REFERENCES staff_accounts(id),
+    assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS teacher_rosters (
+    id SERIAL PRIMARY KEY,
+    teacher_id INTEGER NOT NULL REFERENCES staff_accounts(id) ON DELETE CASCADE,
+    course_code TEXT NOT NULL,
+    course_title TEXT NOT NULL,
+    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'enrolled' CHECK (status IN ('enrolled', 'waitlisted')),
+    UNIQUE(teacher_id, course_code, student_id)
 );

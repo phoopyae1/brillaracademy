@@ -234,6 +234,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       ),
       pool.query<ClassRegistration>(
         `SELECT id, student_id AS "studentId", class_name AS "className", instructor, status,
+                semester, credits, confirmed_by AS "confirmedBy",
                 to_char(registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "registeredAt"
          FROM class_registrations
          WHERE student_id = $1

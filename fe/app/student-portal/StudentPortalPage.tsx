@@ -113,6 +113,8 @@ export default async function StudentPortalPage() {
   ];
 
   const registeredCourses = registrations.filter((registration) => registration.status === 'registered');
+  const totalCredits = registeredCourses.reduce((sum, reg) => sum + (reg.credits ?? 0), 0);
+  const creditLimit = 21;
   const totalOutstanding = outstandingFees.reduce((sum, fee) => sum + fee.amount, 0);
   const nextTimetableEntry = sortedTimetable[0];
   const nextExam = upcomingExamList[0];
@@ -123,6 +125,12 @@ export default async function StudentPortalPage() {
     : null;
 
   const avatarInitials = `${student.firstName.charAt(0)}${student.lastName ? student.lastName.charAt(0) : ''}`;
+
+  // Helper function to get fee status for a subject
+  const getFeeStatus = (subject: string) => {
+    const fee = fees.find(f => f.description?.includes(subject));
+    return fee ? fee.status : null;
+  };
 
   return (
     <Box
@@ -304,6 +312,9 @@ export default async function StudentPortalPage() {
                         {registeredCourses.length}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
+                        {totalCredits}/{creditLimit} credits registered
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
                         {registrations.length} total registrations this term.
                       </Typography>
                     </Stack>
@@ -382,16 +393,19 @@ export default async function StudentPortalPage() {
                         <Divider sx={{ borderStyle: 'dashed' }} />
                         <TableContainer>
                           <Table size="small">
-                            <TableHead>
-                              <TableRow>
-                                <TableCell>Day</TableCell>
-                                <TableCell>Time</TableCell>
-                                <TableCell>Subject</TableCell>
-                                <TableCell>Location</TableCell>
-                              </TableRow>
-                            </TableHead>
-                            <TableBody>
-                              {sortedTimetable.map((entry) => (
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>Day</TableCell>
+                              <TableCell>Time</TableCell>
+                              <TableCell>Subject</TableCell>
+                              <TableCell>Location</TableCell>
+                              <TableCell>Status</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {sortedTimetable.map((entry) => {
+                              const feeStatus = getFeeStatus(entry.subject);
+                              return (
                                 <TableRow key={entry.id}>
                                   <TableCell sx={{ fontWeight: 600 }}>{entry.weekday}</TableCell>
                                   <TableCell>
@@ -399,16 +413,31 @@ export default async function StudentPortalPage() {
                                   </TableCell>
                                   <TableCell>{entry.subject}</TableCell>
                                   <TableCell>{entry.location ?? 'TBA'}</TableCell>
-                                </TableRow>
-                              ))}
-                              {!sortedTimetable.length && (
-                                <TableRow>
-                                  <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                                    No sessions scheduled yet.
+                                  <TableCell>
+                                    {feeStatus ? (
+                                      <Chip
+                                        label={feeStatus === 'paid' ? 'Paid' : 'Pending'}
+                                        size="small"
+                                        color={feeStatus === 'paid' ? 'success' : 'warning'}
+                                        sx={{ fontWeight: 600 }}
+                                      />
+                                    ) : (
+                                      <Typography variant="body2" color="text.secondary">
+                                        —
+                                      </Typography>
+                                    )}
                                   </TableCell>
                                 </TableRow>
-                              )}
-                            </TableBody>
+                              );
+                            })}
+                            {!sortedTimetable.length && (
+                              <TableRow>
+                                <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                                  No sessions scheduled yet.
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </TableBody>
                           </Table>
                         </TableContainer>
                       </Stack>
@@ -416,39 +445,35 @@ export default async function StudentPortalPage() {
 
                     <Paper elevation={0} sx={{  p: 3, backgroundColor: '#ffffff', border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)' }}>
                       <Stack spacing={2}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="h6" fontWeight={700}>
-                            Upcoming schedule
-                          </Typography>
-                          <Chip icon={<ScheduleRoundedIcon fontSize="small" />} label={`${schedule.length} event${schedule.length === 1 ? '' : 's'}`} size="small" color="info" variant="outlined" />
-                        </Stack>
-                        <Typography variant="body2" color="text.secondary">
-                          Stay prepared for advisor meetings, workshops, and mentorship touchpoints.
+                        <Typography variant="h6" fontWeight={700}>
+                          Registration windows
                         </Typography>
-                        <Stack spacing={2}>
-                          {scheduleHighlights.map((item) => (
-                            <Paper key={item.id} variant="outlined" sx={{  p: 2.5, borderColor: 'rgba(79,70,229,0.18)' }}>
-                              <Stack spacing={1}>
-                                <Typography variant="subtitle1" fontWeight={600}>
-                                  {item.title}
-                                </Typography>
-                                <Typography variant="body2" color="text.secondary">
-                                  {formatDateTime(item.startTime)} – {formatDateTime(item.endTime)}
-                                </Typography>
-                                {item.description && (
-                                  <Typography variant="body2" color="text.secondary">
-                                    {item.description}
-                                  </Typography>
-                                )}
-                              </Stack>
-                            </Paper>
-                          ))}
-                          {!scheduleHighlights.length && (
-                            <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ py: 4 }}>
-                              No upcoming events yet. Once you add schedule items, they will appear here.
+                        {nextRegistrationWindow ? (
+                          <Stack spacing={1}>
+                            <Typography fontWeight={600}>{nextRegistrationWindow.semester}</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Status: {nextRegistrationWindow.status.toUpperCase()} · Opens {formatDateTime(nextRegistrationWindow.opensAt)}
                             </Typography>
-                          )}
-                        </Stack>
+                            <Typography variant="body2" color="text.secondary">
+                              Closes {formatDateTime(nextRegistrationWindow.closesAt)}
+                            </Typography>
+                            <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
+                            <Stack spacing={1}>
+                              {nextRegistrationWindow.courses.map((course) => (
+                                <Stack key={course.courseCode} spacing={0.25}>
+                                  <Typography fontWeight={600}>{course.courseTitle}</Typography>
+                                  <Typography variant="caption" color="text.secondary">
+                                    {course.courseCode} · {course.instructor} · {course.credits} credits
+                                  </Typography>
+                                </Stack>
+                              ))}
+                            </Stack>
+                          </Stack>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            Registration windows will appear here as soon as they are announced.
+                          </Typography>
+                        )}
                       </Stack>
                     </Paper>
                   </Stack>
@@ -490,20 +515,23 @@ export default async function StudentPortalPage() {
                       <Stack spacing={2}>
                         <Stack direction="row" justifyContent="space-between" alignItems="center">
                           <Typography variant="h6" fontWeight={700}>
-                            Financial reminders
+                            Upcoming schedule
                           </Typography>
-                          <Chip icon={<AttachMoneyRoundedIcon fontSize="small" />} label="Billing" size="small" color="success" variant="outlined" />
+                          <Chip icon={<ScheduleRoundedIcon fontSize="small" />} label={`${schedule.length} event${schedule.length === 1 ? '' : 's'}`} size="small" color="info" variant="outlined" />
                         </Stack>
+                        <Typography variant="body2" color="text.secondary">
+                          Stay prepared for advisor meetings, workshops, and mentorship touchpoints.
+                        </Typography>
                         <Stack spacing={1.5}>
-                          {outstandingFees.map((fee) => (
-                            <Stack key={fee.id} spacing={0.75}>
-                              <Typography fontWeight={600}>{formatCurrency(fee.amount)}</Typography>
+                          {scheduleHighlights.map((item) => (
+                            <Stack key={item.id} spacing={0.75}>
+                              <Typography fontWeight={600}>{item.title}</Typography>
                               <Typography variant="caption" color="text.secondary">
-                                {fee.description ?? 'Tuition or fee'} · Due {fee.dueDate ? formatDateTime(fee.dueDate) : 'soon'}
+                                {formatDateTime(item.startTime)} – {formatDateTime(item.endTime)}
                               </Typography>
                             </Stack>
                           ))}
-                          {!outstandingFees.length && <Typography variant="body2">All fees are up to date.</Typography>}
+                          {!scheduleHighlights.length && <Typography variant="body2">No upcoming events yet.</Typography>}
                         </Stack>
                       </Stack>
                     </Paper>
@@ -547,7 +575,9 @@ export default async function StudentPortalPage() {
                             <TableRow>
                               <TableCell>Class</TableCell>
                               <TableCell>Instructor</TableCell>
+                              <TableCell>Credits</TableCell>
                               <TableCell>Status</TableCell>
+                              <TableCell>Confirmed</TableCell>
                               <TableCell>Registered</TableCell>
                             </TableRow>
                           </TableHead>
@@ -556,6 +586,7 @@ export default async function StudentPortalPage() {
                               <TableRow key={registration.id}>
                                 <TableCell sx={{ fontWeight: 600 }}>{registration.className}</TableCell>
                                 <TableCell>{registration.instructor ?? 'TBA'}</TableCell>
+                                <TableCell>{registration.credits ?? '—'}</TableCell>
                                 <TableCell>
                                   <Chip
                                     label={registration.status}
@@ -564,12 +595,19 @@ export default async function StudentPortalPage() {
                                     sx={{ textTransform: 'capitalize', fontWeight: 600 }}
                                   />
                                 </TableCell>
+                                <TableCell>
+                                  {registration.confirmedBy ? (
+                                    <Chip label="Confirmed" size="small" color="success" variant="outlined" sx={{ fontWeight: 600 }} />
+                                  ) : (
+                                    <Chip label="Pending" size="small" color="warning" variant="outlined" sx={{ fontWeight: 600 }} />
+                                  )}
+                                </TableCell>
                                 <TableCell>{formatDateTime(registration.registeredAt)}</TableCell>
                               </TableRow>
                             ))}
                             {!registrations.length && (
                               <TableRow>
-                                <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                                <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                                   No class registrations have been submitted yet.
                                 </TableCell>
                               </TableRow>
@@ -611,35 +649,52 @@ export default async function StudentPortalPage() {
 
                     <Paper elevation={0} sx={{  p: 3, backgroundColor: '#ffffff', border: '1px solid', borderColor: 'rgba(0, 0, 0, 0.08)' }}>
                       <Stack spacing={2}>
-                        <Typography variant="h6" fontWeight={700}>
-                          Registration windows
-                        </Typography>
-                        {nextRegistrationWindow ? (
-                          <Stack spacing={1}>
-                            <Typography fontWeight={600}>{nextRegistrationWindow.semester}</Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              Status: {nextRegistrationWindow.status.toUpperCase()} · Opens {formatDateTime(nextRegistrationWindow.opensAt)}
-                            </Typography>
-                            <Typography variant="body2" color="text.secondary">
-                              Closes {formatDateTime(nextRegistrationWindow.closesAt)}
-                            </Typography>
-                            <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
-                            <Stack spacing={1}>
-                              {nextRegistrationWindow.courses.map((course) => (
-                                <Stack key={course.courseCode} spacing={0.25}>
-                                  <Typography fontWeight={600}>{course.courseTitle}</Typography>
-                                  <Typography variant="caption" color="text.secondary">
-                                    {course.courseCode} · {course.instructor} · {course.credits} credits
-                                  </Typography>
-                                </Stack>
-                              ))}
-                            </Stack>
-                          </Stack>
-                        ) : (
-                          <Typography variant="body2" color="text.secondary">
-                            Registration windows will appear here as soon as they are announced.
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography variant="h6" fontWeight={700}>
+                            Class fees & payments
                           </Typography>
-                        )}
+                          <Chip icon={<AttachMoneyRoundedIcon fontSize="small" />} label={`${fees.length} fee${fees.length === 1 ? '' : 's'}`} size="small" color="success" variant="outlined" />
+                        </Stack>
+                        <Typography variant="body2" color="text.secondary">
+                          Detailed fee breakdown for all registered classes.
+                        </Typography>
+                        <Divider sx={{ borderStyle: 'dashed' }} />
+                        <TableContainer>
+                          <Table size="small">
+                            <TableHead>
+                              <TableRow>
+                                <TableCell>Description</TableCell>
+                                <TableCell>Amount</TableCell>
+                                <TableCell>Due Date</TableCell>
+                                <TableCell>Status</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {fees.map((fee) => (
+                                <TableRow key={fee.id}>
+                                  <TableCell sx={{ fontWeight: 600 }}>{fee.description ?? 'Fee'}</TableCell>
+                                  <TableCell>{formatCurrency(fee.amount)}</TableCell>
+                                  <TableCell>{fee.dueDate ? formatDateTime(fee.dueDate) : 'TBA'}</TableCell>
+                                  <TableCell>
+                                    <Chip
+                                      label={fee.status === 'paid' ? 'Paid' : 'Pending'}
+                                      size="small"
+                                      color={fee.status === 'paid' ? 'success' : 'warning'}
+                                      sx={{ fontWeight: 600 }}
+                                    />
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                              {!fees.length && (
+                                <TableRow>
+                                  <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                                    No fees have been posted yet.
+                                  </TableCell>
+                                </TableRow>
+                              )}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
                       </Stack>
                     </Paper>
                   </Stack>

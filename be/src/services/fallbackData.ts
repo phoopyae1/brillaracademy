@@ -111,7 +111,7 @@ export const fallbackFeatures: Feature[] = [
   }
 ];
 
-export const seededPasswordHash = 'f35c3c028c31e04bb4e5f8459825d2567307db506e54b13bce33d6fc392851ee';
+export const seededPasswordHash = '$2a$10$nL8DH4FX53TBjccqOUFtkucOoZPdbdd/f4SXMxv8ENjS/pUadeUX2';
 
 export const fallbackStudents: Student[] = [
   {
@@ -141,8 +141,8 @@ export const fallbackTimetables: TimetableEntry[] = [
     weekday: 'Monday',
     startTime: '09:00',
     endTime: '10:15',
-    subject: 'Organic Chemistry Lab',
-    location: 'Science Center 204'
+    subject: 'Global Health Innovation Lab',
+    location: 'North Campus - Building B'
   },
   {
     id: 2,
@@ -150,8 +150,8 @@ export const fallbackTimetables: TimetableEntry[] = [
     weekday: 'Tuesday',
     startTime: '11:00',
     endTime: '12:15',
-    subject: 'Biomechanics Seminar',
-    location: 'Innovation Hub 3A'
+    subject: 'Neuroscience Frontiers',
+    location: 'Main Campus - Innovation Hub'
   },
   {
     id: 3,
@@ -160,7 +160,7 @@ export const fallbackTimetables: TimetableEntry[] = [
     startTime: '14:00',
     endTime: '15:30',
     subject: 'Community Health Project',
-    location: 'Wellness Studio'
+    location: 'South Campus - Health Center'
   },
   {
     id: 4,
@@ -168,7 +168,7 @@ export const fallbackTimetables: TimetableEntry[] = [
     weekday: 'Monday',
     startTime: '10:30',
     endTime: '11:45',
-    subject: 'Machine Learning',
+    subject: 'Advanced Data Ethics',
     location: 'Tech Hall 201'
   },
   {
@@ -177,8 +177,8 @@ export const fallbackTimetables: TimetableEntry[] = [
     weekday: 'Wednesday',
     startTime: '13:00',
     endTime: '14:15',
-    subject: 'Human-Centered Data Viz',
-    location: 'Design Loft'
+    subject: 'Immersive Visualization Studio',
+    location: 'Analytics Lab 410'
   },
   {
     id: 6,
@@ -187,7 +187,7 @@ export const fallbackTimetables: TimetableEntry[] = [
     startTime: '09:30',
     endTime: '11:00',
     subject: 'Capstone Studio',
-    location: 'Analytics Lab'
+    location: 'Main Campus - Tech Tower'
   }
 ];
 
@@ -234,7 +234,9 @@ export const fallbackRegistrations: ClassRegistration[] = [
     instructor: 'Dr. Priya Raman',
     status: 'registered',
     registeredAt: '2024-08-15T13:00:00Z',
-    semester: 'Fall 2024'
+    semester: 'Fall 2024',
+    credits: 3,
+    confirmedBy: 1
   },
   {
     id: 2,
@@ -243,7 +245,9 @@ export const fallbackRegistrations: ClassRegistration[] = [
     instructor: 'Professor Malik Chen',
     status: 'waitlisted',
     registeredAt: '2024-08-16T09:30:00Z',
-    semester: 'Fall 2024'
+    semester: 'Fall 2024',
+    credits: 4,
+    confirmedBy: null
   },
   {
     id: 3,
@@ -252,7 +256,9 @@ export const fallbackRegistrations: ClassRegistration[] = [
     instructor: 'Dr. Leila Morgan',
     status: 'registered',
     registeredAt: '2024-08-14T10:45:00Z',
-    semester: 'Fall 2024'
+    semester: 'Fall 2024',
+    credits: 3,
+    confirmedBy: 1
   },
   {
     id: 4,
@@ -261,7 +267,9 @@ export const fallbackRegistrations: ClassRegistration[] = [
     instructor: 'Professor Aaron Patel',
     status: 'registered',
     registeredAt: '2024-08-17T11:15:00Z',
-    semester: 'Fall 2024'
+    semester: 'Fall 2024',
+    credits: 4,
+    confirmedBy: null
   }
 ];
 
@@ -340,25 +348,45 @@ export const fallbackFeePayments: FeePayment[] = [
   {
     id: 1,
     studentId: 1,
-    amount: 1850,
-    description: 'Fall 2024 Laboratory Fee',
-    status: 'paid',
-    receivedBy: 3,
-    receivedAt: '2024-08-20T16:00:00Z',
-    dueDate: '2024-09-01T00:00:00Z'
+    amount: 1200,
+    description: 'Global Health Innovation Lab - Registration Fee',
+    status: 'pending',
+    receivedBy: null,
+    receivedAt: '2024-08-20T00:00:00Z',
+    dueDate: '2024-09-15T00:00:00Z'
   },
   {
     id: 2,
-    studentId: 2,
-    amount: 2200,
-    description: 'Fall 2024 Capstone Materials Fee',
-    status: 'paid',
-    receivedBy: 3,
-    receivedAt: '2024-08-21T13:45:00Z',
-    dueDate: '2024-09-05T00:00:00Z'
+    studentId: 1,
+    amount: 850,
+    description: 'Neuroscience Frontiers - Class Fee',
+    status: 'pending',
+    receivedBy: null,
+    receivedAt: '2024-08-20T00:00:00Z',
+    dueDate: '2024-09-15T00:00:00Z'
   },
   {
     id: 3,
+    studentId: 2,
+    amount: 1500,
+    description: 'Advanced Data Ethics - Registration Fee',
+    status: 'pending',
+    receivedBy: null,
+    receivedAt: '2024-08-21T00:00:00Z',
+    dueDate: '2024-09-15T00:00:00Z'
+  },
+  {
+    id: 4,
+    studentId: 2,
+    amount: 1800,
+    description: 'Immersive Visualization Studio - Class Fee',
+    status: 'paid',
+    receivedBy: 3,
+    receivedAt: '2024-08-21T13:45:00Z',
+    dueDate: '2024-09-15T00:00:00Z'
+  },
+  {
+    id: 5,
     studentId: 2,
     amount: 450,
     description: 'Student Wellness Pass',
