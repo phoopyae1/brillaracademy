@@ -68,8 +68,11 @@ export default function StudentPortalSection() {
                 <Stack spacing={1}>
                   <Button variant="text" size="small" sx={{ px: 0, alignSelf: 'flex-start' }}>Forgot password?</Button>
                   <Alert severity="info" sx={{ bgcolor: 'transparent', border: `1px solid`, borderColor: 'primary.light' }}>
-                    Accounts are created by the Student Administrative Office. Contact admin-office@brillaracademy.edu to request
-                    access.
+                    New learners can <Typography component="span" variant="body2" color="primary" sx={{ fontWeight: 600 }}>
+                      self-register
+                    </Typography>{' '}
+                    to receive credentials instantly. Visit the registration page to create your account and choose your
+                    subjects.
                   </Alert>
                 </Stack>
               </Stack>

@@ -8,9 +8,13 @@ import {
   listStudents,
   registerStudentForSemesterCourse
 } from '../services/studentService.js';
-import { AVAILABLE_MAJORS } from '../utils/majors.js';
+import { AVAILABLE_MAJORS, getSubjectsForMajor, listMajorsWithSubjects } from '../utils/majors.js';
 
 const router = Router();
+
+router.get('/public/majors', (_req, res) => {
+  res.json({ majors: listMajorsWithSubjects() });
+});
 
 router.get('/public/all', async (_req, res) => {
   const students = await listStudents();
@@ -22,7 +26,8 @@ router.get('/public/all', async (_req, res) => {
       email: student.email,
       role: student.role,
       primaryInterest: student.primaryInterest,
-      createdAt: student.createdAt
+      createdAt: student.createdAt,
+      selectedSubjects: student.selectedSubjects ?? []
     }))
   });
 });
@@ -32,19 +37,57 @@ router.get('/', requireStaff(), async (_req, res) => {
   res.json({ students });
 });
 
-const createStudentSchema = z.object({
+const baseStudentSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   email: z.string().email(),
   password: z.string().min(6),
-  role: z.string().optional(),
   primaryInterest: z.enum(AVAILABLE_MAJORS as [string, ...string[]])
 });
+
+const createStudentSchema = baseStudentSchema
+  .extend({
+    role: z.string().optional(),
+    selectedSubjects: z.array(z.string().min(1)).optional()
+  })
+  .superRefine((data, ctx) => {
+    if (!data.selectedSubjects?.length) {
+      return;
+    }
+
+    const availableSubjects = getSubjectsForMajor(data.primaryInterest);
+    const invalidSubjects = data.selectedSubjects.filter((subject) => !availableSubjects.includes(subject));
+
+    if (invalidSubjects.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Selected subjects are not available for ${data.primaryInterest}.`,
+        path: ['selectedSubjects']
+      });
+    }
+  });
 
 const registerForCourseSchema = z.object({
   semester: z.string().min(1),
   courseCode: z.string().min(1)
 });
+
+const selfRegistrationSchema = baseStudentSchema
+  .extend({
+    selectedSubjects: z.array(z.string().min(1)).min(1)
+  })
+  .superRefine((data, ctx) => {
+    const availableSubjects = getSubjectsForMajor(data.primaryInterest);
+    const invalidSubjects = data.selectedSubjects.filter((subject) => !availableSubjects.includes(subject));
+
+    if (invalidSubjects.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Selected subjects are not available for ${data.primaryInterest}.`,
+        path: ['selectedSubjects']
+      });
+    }
+  });
 
 router.post('/', requireStaff(['IT_ADMIN', 'STUDENT_ADMIN']), async (req, res) => {
   const parseResult = createStudentSchema.safeParse(req.body);
@@ -60,6 +103,30 @@ router.post('/', requireStaff(['IT_ADMIN', 'STUDENT_ADMIN']), async (req, res) =
     const duplicate = error?.code === '23505';
     return res.status(duplicate ? 409 : 500).json({
       error: duplicate ? 'An account with this email already exists.' : 'Unable to create student account right now.'
+    });
+  }
+});
+
+router.post('/public/self-register', async (req, res) => {
+  const parseResult = selfRegistrationSchema.safeParse(req.body);
+
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid registration payload.', details: parseResult.error.flatten() });
+  }
+
+  try {
+    const student = await createStudent({
+      ...parseResult.data,
+      role: 'Student'
+    });
+
+    return res.status(201).json({ student });
+  } catch (error: any) {
+    const duplicate = error?.code === '23505';
+    return res.status(duplicate ? 409 : 500).json({
+      error: duplicate
+        ? 'An account with this email already exists. Try signing in instead.'
+        : 'Unable to create your account right now. Please try again later.'
     });
   }
 });

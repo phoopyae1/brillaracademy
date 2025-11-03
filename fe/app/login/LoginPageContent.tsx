@@ -177,8 +177,9 @@ export default function LoginPageContent() {
 
             <Stack spacing={1.5}>
               <Typography variant="body2" color="text.secondary">
-                Student accounts are issued by the administrative teams. Reach out to the Student Administrative Office or the IT
-                administrator to receive your credentials. Staff members should contact the IT administrator for Forge access.
+                New to Brillar Academy? Create your student account, choose your major, and pick your first subjects on our self
+                registration page. Staff members can still reach out to the IT administrator for Forge access and provisioning
+                support.
               </Typography>
               <Stack
                 direction={{ xs: 'column', sm: 'row' }}
@@ -186,9 +187,9 @@ export default function LoginPageContent() {
                 justifyContent="space-between"
                 alignItems={{ xs: 'stretch', sm: 'center' }}
               >
-                <Typography variant="body2" color="text.secondary">
-                  Email: admin-office@brillaracademy.edu
-                </Typography>
+                <Link href="/register" underline="hover">
+                  Create a student account
+                </Link>
                 <Link href="/create" underline="hover">
                   Interested in building a new class?
                 </Link>

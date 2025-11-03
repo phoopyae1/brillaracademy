@@ -121,7 +121,8 @@ export const fallbackStudents: Student[] = [
     email: 'aaliyah.gupta@example.edu',
     role: 'Student',
     primaryInterest: 'Biomedical Engineering',
-    createdAt: new Date('2024-08-12T14:30:00Z').toISOString()
+    createdAt: new Date('2024-08-12T14:30:00Z').toISOString(),
+    selectedSubjects: ['Neural Interface Design', 'Global Health Innovation Lab']
   },
   {
     id: 2,
@@ -130,7 +131,8 @@ export const fallbackStudents: Student[] = [
     email: 'mateo.santos@example.edu',
     role: 'Student',
     primaryInterest: 'Data Science',
-    createdAt: new Date('2024-08-12T14:30:00Z').toISOString()
+    createdAt: new Date('2024-08-12T14:30:00Z').toISOString(),
+    selectedSubjects: ['Responsible AI Systems', 'Advanced Data Ethics']
   }
 ];
 

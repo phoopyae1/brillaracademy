@@ -25,6 +25,13 @@ import {
 import { listStudentFeePayments } from './financeService.js';
 import { listClassroomEnrollmentsForStudent } from './classroomService.js';
 
+type StudentSubjectSelection = {
+  studentId: number;
+  major: string | null;
+  subjects: string[];
+  createdAt: string;
+};
+
 let inMemoryStudents = [...fallbackStudents];
 let inMemoryTimetables = [...fallbackTimetables];
 let inMemorySchedules = [...fallbackSchedules];
@@ -32,8 +39,39 @@ let inMemoryRegistrations = [...fallbackRegistrations];
 let inMemorySecrets = new Map<number, string>(
   fallbackStudents.map((student) => [student.id, seededPasswordHash])
 );
+let inMemorySubjectSelections = new Map<number, StudentSubjectSelection>(
+  fallbackStudents
+    .filter((student) => Array.isArray(student.selectedSubjects) && student.selectedSubjects.length)
+    .map((student) => [
+      student.id,
+      {
+        studentId: student.id,
+        major: student.primaryInterest ?? null,
+        subjects: [...(student.selectedSubjects ?? [])],
+        createdAt: student.createdAt
+      }
+    ])
+);
 let nextStudentId = fallbackStudents.length + 1;
 let nextRegistrationId = fallbackRegistrations.length + 1;
+
+function sanitizeSubjects(subjects: unknown): string[] {
+  if (!Array.isArray(subjects)) {
+    return [];
+  }
+
+  const unique = new Set<string>();
+  for (const subject of subjects) {
+    if (typeof subject === 'string') {
+      const trimmed = subject.trim();
+      if (trimmed.length) {
+        unique.add(trimmed);
+      }
+    }
+  }
+
+  return Array.from(unique);
+}
 
 function normalizeStudent(row: any): Student {
   return {
@@ -43,15 +81,46 @@ function normalizeStudent(row: any): Student {
     email: row.email,
     role: row.role,
     primaryInterest: row.primary_interest,
-    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    selectedSubjects: sanitizeSubjects(row.selected_subjects)
   };
+}
+
+function rememberSubjectSelection(student: Student, subjects: string[]): void {
+  const cleanedSubjects = sanitizeSubjects(subjects);
+
+  if (!cleanedSubjects.length) {
+    inMemorySubjectSelections.delete(student.id);
+    return;
+  }
+
+  inMemorySubjectSelections.set(student.id, {
+    studentId: student.id,
+    major: student.primaryInterest ?? null,
+    subjects: cleanedSubjects,
+    createdAt: new Date().toISOString()
+  });
+}
+
+function applySubjectSelection(student: Student): Student {
+  const cleanedSubjects = sanitizeSubjects(student.selectedSubjects);
+  if (cleanedSubjects.length) {
+    return { ...student, selectedSubjects: cleanedSubjects };
+  }
+
+  const storedSelection = inMemorySubjectSelections.get(student.id);
+  if (!storedSelection) {
+    return { ...student, selectedSubjects: [] };
+  }
+
+  return { ...student, selectedSubjects: [...storedSelection.subjects] };
 }
 
 export async function listStudents(): Promise<Student[]> {
   const pool = getPool();
 
   if (!pool) {
-    return inMemoryStudents;
+    return inMemoryStudents.map((student) => applySubjectSelection(student));
   }
 
   try {
@@ -60,10 +129,12 @@ export async function listStudents(): Promise<Student[]> {
        FROM students
        ORDER BY created_at DESC`
     );
-    return rows.map(normalizeStudent);
+    return rows.map(normalizeStudent).map((student) => {
+      return applySubjectSelection(student);
+    });
   } catch (error) {
     console.error('Failed to fetch students from database', error);
-    return inMemoryStudents;
+    return inMemoryStudents.map((student) => applySubjectSelection(student));
   }
 }
 
@@ -75,7 +146,8 @@ export async function fetchStudentById(id: number): Promise<Student | null> {
   const pool = getPool();
 
   if (!pool) {
-    return inMemoryStudents.find((student) => student.id === id) ?? null;
+    const student = inMemoryStudents.find((item) => item.id === id) ?? null;
+    return student ? applySubjectSelection(student) : null;
   }
 
   try {
@@ -90,7 +162,7 @@ export async function fetchStudentById(id: number): Promise<Student | null> {
       return null;
     }
 
-    return normalizeStudent(rows[0]);
+    return applySubjectSelection(normalizeStudent(rows[0]));
   } catch (error) {
     console.error('Failed to fetch student by id', error);
     return null;
@@ -98,9 +170,10 @@ export async function fetchStudentById(id: number): Promise<Student | null> {
 }
 
 export async function createStudent(input: CreateStudentInput): Promise<Student> {
-  const { firstName, lastName, email, password, role, primaryInterest } = input;
+  const { firstName, lastName, email, password, role, primaryInterest, selectedSubjects } = input;
   const hashedPassword = bcrypt.hashSync(password, 10);
   const pool = getPool();
+  const cleanedSubjects = sanitizeSubjects(selectedSubjects);
 
   if (!pool) {
     const student: Student = {
@@ -110,12 +183,14 @@ export async function createStudent(input: CreateStudentInput): Promise<Student>
       email,
       role: role ?? 'Student',
       primaryInterest,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      selectedSubjects: cleanedSubjects
     };
 
     inMemoryStudents = [student, ...inMemoryStudents];
     inMemorySecrets.set(student.id, hashedPassword);
-    return student;
+    rememberSubjectSelection(student, cleanedSubjects);
+    return applySubjectSelection(student);
   }
 
   try {
@@ -126,7 +201,9 @@ export async function createStudent(input: CreateStudentInput): Promise<Student>
       [firstName, lastName, email, hashedPassword, role ?? 'Student', primaryInterest]
     );
 
-    return normalizeStudent(rows[0]);
+    const student = normalizeStudent(rows[0]);
+    rememberSubjectSelection(student, cleanedSubjects);
+    return applySubjectSelection({ ...student, selectedSubjects: cleanedSubjects });
   } catch (error) {
     console.error('Failed to create student', error);
     throw error;
@@ -143,7 +220,7 @@ export async function authenticateStudent(email: string, password: string): Prom
     }
 
     const expectedHash = inMemorySecrets.get(student.id);
-    return expectedHash && bcrypt.compareSync(password, expectedHash) ? student : null;
+    return expectedHash && bcrypt.compareSync(password, expectedHash) ? applySubjectSelection(student) : null;
   }
 
   try {
@@ -160,7 +237,11 @@ export async function authenticateStudent(email: string, password: string): Prom
 
     const [row] = rows;
     const passwordMatches = await bcrypt.compare(password, row.password_hash);
-    return passwordMatches ? normalizeStudent(row) : null;
+    if (!passwordMatches) {
+      return null;
+    }
+
+    return applySubjectSelection(normalizeStudent(row));
   } catch (error) {
     console.error('Failed to authenticate student', error);
     return null;
@@ -193,7 +274,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       .sort((a, b) => new Date(a.examDate).getTime() - new Date(b.examDate).getTime());
 
     return {
-      student,
+      student: applySubjectSelection(student),
       timetable: inMemoryTimetables.filter((entry) => entry.studentId === studentId),
       schedule: inMemorySchedules.filter((entry) => entry.studentId === studentId),
       registrations: inMemoryRegistrations.filter((entry) => entry.studentId === studentId),
