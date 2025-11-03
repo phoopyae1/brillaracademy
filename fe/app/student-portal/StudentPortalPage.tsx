@@ -45,9 +45,12 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
+const CREDIT_RATE = 4000;
+
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+  return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB' }).format(value);
 }
+
 
 export default async function StudentPortalPage() {
   const cookieStore = cookies();
@@ -116,6 +119,7 @@ export default async function StudentPortalPage() {
   const totalCredits = registeredCourses.reduce((sum, reg) => sum + (reg.credits ?? 0), 0);
   const creditLimit = 21;
   const totalOutstanding = outstandingFees.reduce((sum, fee) => sum + fee.amount, 0);
+  const tuitionEstimate = totalCredits * CREDIT_RATE;
   const nextTimetableEntry = sortedTimetable[0];
   const nextExam = upcomingExamList[0];
   const scheduleHighlights = schedule.slice(0, 3);
@@ -314,6 +318,12 @@ export default async function StudentPortalPage() {
                       <Typography variant="body2" color="text.secondary">
                         {totalCredits}/{creditLimit} credits registered
                       </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Estimated tuition: <Typography component="span" fontWeight={700}>{formatCurrency(tuitionEstimate)}</Typography>
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        1 credit = {formatCurrency(CREDIT_RATE)} · {totalCredits} credit{totalCredits === 1 ? '' : 's'} confirmed
+                      </Typography>
                       <Typography variant="caption" color="text.secondary">
                         {registrations.length} total registrations this term.
                       </Typography>
@@ -364,7 +374,7 @@ export default async function StudentPortalPage() {
                         </Typography>
                       </Stack>
                       <Typography variant="h3" fontWeight={700}>
-                        {totalOutstanding > 0 ? formatCurrency(totalOutstanding) : '$0'}
+                        {formatCurrency(totalOutstanding > 0 ? totalOutstanding : 0)}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
                         {outstandingFees.length
@@ -576,38 +586,45 @@ export default async function StudentPortalPage() {
                               <TableCell>Class</TableCell>
                               <TableCell>Instructor</TableCell>
                               <TableCell>Credits</TableCell>
+                              <TableCell>Tuition</TableCell>
                               <TableCell>Status</TableCell>
                               <TableCell>Confirmed</TableCell>
                               <TableCell>Registered</TableCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>
-                            {registrations.map((registration) => (
-                              <TableRow key={registration.id}>
-                                <TableCell sx={{ fontWeight: 600 }}>{registration.className}</TableCell>
-                                <TableCell>{registration.instructor ?? 'TBA'}</TableCell>
-                                <TableCell>{registration.credits ?? '—'}</TableCell>
-                                <TableCell>
-                                  <Chip
-                                    label={registration.status}
-                                    color={registration.status === 'registered' ? 'success' : registration.status === 'waitlisted' ? 'warning' : 'default'}
-                                    size="small"
-                                    sx={{ textTransform: 'capitalize', fontWeight: 600 }}
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  {registration.confirmedBy ? (
-                                    <Chip label="Confirmed" size="small" color="success" variant="outlined" sx={{ fontWeight: 600 }} />
-                                  ) : (
-                                    <Chip label="Pending" size="small" color="warning" variant="outlined" sx={{ fontWeight: 600 }} />
-                                  )}
-                                </TableCell>
-                                <TableCell>{formatDateTime(registration.registeredAt)}</TableCell>
-                              </TableRow>
-                            ))}
+                            {registrations.map((registration) => {
+                              const credits = registration.credits ?? 0;
+                              const tuition = credits > 0 ? formatCurrency(credits * CREDIT_RATE) : '—';
+
+                              return (
+                                <TableRow key={registration.id}>
+                                  <TableCell sx={{ fontWeight: 600 }}>{registration.className}</TableCell>
+                                  <TableCell>{registration.instructor ?? 'TBA'}</TableCell>
+                                  <TableCell>{credits || '—'}</TableCell>
+                                  <TableCell>{tuition}</TableCell>
+                                  <TableCell>
+                                    <Chip
+                                      label={registration.status}
+                                      color={registration.status === 'registered' ? 'success' : registration.status === 'waitlisted' ? 'warning' : 'default'}
+                                      size="small"
+                                      sx={{ textTransform: 'capitalize', fontWeight: 600 }}
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    {registration.confirmedBy ? (
+                                      <Chip label="Confirmed" size="small" color="success" variant="outlined" sx={{ fontWeight: 600 }} />
+                                    ) : (
+                                      <Chip label="Pending" size="small" color="warning" variant="outlined" sx={{ fontWeight: 600 }} />
+                                    )}
+                                  </TableCell>
+                                  <TableCell>{formatDateTime(registration.registeredAt)}</TableCell>
+                                </TableRow>
+                              );
+                            })}
                             {!registrations.length && (
                               <TableRow>
-                                <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                                <TableCell colSpan={7} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                                   No class registrations have been submitted yet.
                                 </TableCell>
                               </TableRow>
@@ -707,6 +724,7 @@ export default async function StudentPortalPage() {
                     studentId={student.id}
                     classrooms={availableClassrooms}
                     enrollments={classroomEnrollments}
+                    studentMajor={student.primaryInterest}
                   />
                 </Grid>
               </Grid>

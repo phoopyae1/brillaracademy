@@ -119,6 +119,7 @@ export type Classroom = {
   resources: string[];
   createdBy: number | null;
   createdAt: string;
+  focusAreas?: string[];
 };
 
 export type ClassroomAvailability = Classroom & {
@@ -291,7 +292,7 @@ export async function listStudents(token?: string): Promise<Student[]> {
 
 export async function createStudent(
   token: string,
-  input: { firstName: string; lastName: string; email: string; password: string; primaryInterest?: string }
+  input: { firstName: string; lastName: string; email: string; password: string; primaryInterest: string }
 ): Promise<Student> {
   const data = await apiRequest<{ student: Student }>('/students', {
     method: 'POST',

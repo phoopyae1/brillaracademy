@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -24,6 +24,7 @@ type ClassroomSelfRegistrationCardProps = {
   studentId: number;
   classrooms: ClassroomAvailability[];
   enrollments: ClassroomEnrollment[];
+  studentMajor?: string | null;
 };
 
 function formatRegisteredAt(value: string) {
@@ -36,7 +37,8 @@ function formatRegisteredAt(value: string) {
 export default function ClassroomSelfRegistrationCard({
   studentId,
   classrooms,
-  enrollments
+  enrollments,
+  studentMajor
 }: ClassroomSelfRegistrationCardProps) {
   const [classroomList, setClassroomList] = useState(classrooms);
   const [enrollmentList, setEnrollmentList] = useState(enrollments);
@@ -108,6 +110,40 @@ export default function ClassroomSelfRegistrationCard({
     }
   };
 
+  const normalizedMajor = studentMajor?.trim().toLowerCase();
+
+  const deriveFocusAreas = useCallback((room: ClassroomAvailability): string[] => {
+    if (Array.isArray(room.focusAreas) && room.focusAreas.length) {
+      return room.focusAreas;
+    }
+
+    return room.resources
+      .map((resource) => {
+        if (typeof resource !== 'string') {
+          return null;
+        }
+
+        const match = resource.match(/^\s*Major:\s*(.+)$/i);
+        return match ? match[1].trim() : null;
+      })
+      .filter((value): value is string => Boolean(value));
+  }, []);
+
+  const filteredClassrooms = useMemo(() => {
+    if (!normalizedMajor) {
+      return classroomList;
+    }
+
+    return classroomList.filter((room) => {
+      const focusAreas = deriveFocusAreas(room);
+      if (!focusAreas.length) {
+        return true;
+      }
+
+      return focusAreas.some((area) => area.toLowerCase() === normalizedMajor);
+    });
+  }, [classroomList, normalizedMajor, deriveFocusAreas]);
+
   if (!classroomList.length) {
     return (
       <Paper elevation={0} sx={{  p: 3, backgroundColor: '#ffffff', border: '1px solid', borderColor: 'rgba(0,0,0,0.08)' }}>
@@ -118,6 +154,24 @@ export default function ClassroomSelfRegistrationCard({
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Administrators have not published any shared classrooms yet. Check back soon to claim a collaborative space.
+          </Typography>
+        </Stack>
+      </Paper>
+    );
+  }
+
+  if (!filteredClassrooms.length) {
+    return (
+      <Paper elevation={0} sx={{  p: 3, backgroundColor: '#ffffff', border: '1px solid', borderColor: 'rgba(0,0,0,0.08)' }}>
+        <Stack spacing={2} alignItems="center" textAlign="center">
+          <WorkspacePremiumRoundedIcon color="primary" fontSize="large" />
+          <Typography variant="h6" fontWeight={700}>
+            Major-specific classrooms coming soon
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            {studentMajor
+              ? `We’re preparing collaborative spaces tailored for the ${studentMajor} major. Please check back later or contact the IT team for assistance.`
+              : 'Update your major to see recommended collaborative classrooms.'}
           </Typography>
         </Stack>
       </Paper>
@@ -137,10 +191,19 @@ export default function ClassroomSelfRegistrationCard({
           <Typography variant="body2" color="text.secondary">
             Browse spaces curated by the IT team and reserve a seat for project work, study groups, or club meetups.
           </Typography>
+          {studentMajor && (
+            <Chip
+              label={`Showing classes for ${studentMajor}`}
+              size="small"
+              color="primary"
+              variant="outlined"
+              sx={{ alignSelf: 'flex-start' }}
+            />
+          )}
         </Stack>
 
         <Stack spacing={2.5}>
-          {classroomList.map((classroom) => {
+          {filteredClassrooms.map((classroom) => {
             const enrollment = enrollmentLookup.get(classroom.id);
             const state = registrationStates[classroom.id];
             const progress = Math.min(
@@ -150,6 +213,10 @@ export default function ClassroomSelfRegistrationCard({
             const isRegistered = Boolean(enrollment);
             const isLoading = state?.status === 'loading';
             const buttonDisabled = isRegistered || classroom.isFull || isLoading;
+            const focusAreas = deriveFocusAreas(classroom);
+            const nonMajorResources = classroom.resources.filter((resource) => !/^\s*Major:/i.test(resource));
+            const displayedResources = nonMajorResources.slice(0, 4);
+            const extraResources = Math.max(nonMajorResources.length - displayedResources.length, 0);
 
             return (
               <Paper
@@ -167,19 +234,27 @@ export default function ClassroomSelfRegistrationCard({
                     </Typography>
                   </Stack>
 
-                  {!!classroom.resources.length && (
+                  {!!displayedResources.length && (
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                      {classroom.resources.slice(0, 4).map((resource) => (
+                      {displayedResources.map((resource) => (
                         <Chip key={resource} label={resource} size="small" color="primary" variant="outlined" />
                       ))}
-                      {classroom.resources.length > 4 && (
+                      {extraResources > 0 && (
                         <Chip
-                          label={`+${classroom.resources.length - 4} more`}
+                          label={`+${extraResources} more`}
                           size="small"
                           color="primary"
                           variant="outlined"
                         />
                       )}
+                    </Stack>
+                  )}
+
+                  {focusAreas.length > 0 && (
+                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                      {focusAreas.map((area) => (
+                        <Chip key={area} label={area} size="small" color="secondary" variant="outlined" />
+                      ))}
                     </Stack>
                   )}
 

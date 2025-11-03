@@ -66,7 +66,7 @@ export type CreateStudentInput = {
   email: string;
   password: string;
   role?: string;
-  primaryInterest?: string | null;
+  primaryInterest: string;
 };
 
 export type StaffRole = 'IT_ADMIN' | 'TEACHER' | 'STUDENT_ADMIN';
@@ -87,6 +87,7 @@ export type Classroom = {
   resources: string[];
   createdBy: number | null;
   createdAt: string;
+  focusAreas?: string[];
 };
 
 export type ClassroomEnrollmentStatus = 'enrolled' | 'waitlisted';

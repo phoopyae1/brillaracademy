@@ -109,7 +109,7 @@ export async function createStudent(input: CreateStudentInput): Promise<Student>
       lastName,
       email,
       role: role ?? 'Student',
-      primaryInterest: primaryInterest ?? null,
+      primaryInterest,
       createdAt: new Date().toISOString()
     };
 
@@ -123,7 +123,7 @@ export async function createStudent(input: CreateStudentInput): Promise<Student>
       `INSERT INTO students (first_name, last_name, email, password_hash, role, primary_interest)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, first_name, last_name, email, role, primary_interest, created_at`,
-      [firstName, lastName, email, hashedPassword, role ?? 'Student', primaryInterest ?? null]
+      [firstName, lastName, email, hashedPassword, role ?? 'Student', primaryInterest]
     );
 
     return normalizeStudent(rows[0]);
