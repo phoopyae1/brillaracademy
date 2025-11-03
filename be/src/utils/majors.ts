@@ -7,6 +7,7 @@ export const AVAILABLE_MAJORS = [
   'Environmental Science',
   'Hospitality Management',
   'Artificial Intelligence',
+  'Information Technology',
   'Cybersecurity'
 ] as const;
 
@@ -61,6 +62,12 @@ const MAJOR_SUBJECTS: Record<Major, string[]> = {
     'Human-Centered AI Design',
     'Generative AI Studio'
   ],
+  'Information Technology': [
+    'Intro to Programming',
+    'Network Infrastructure Lab',
+    'Systems Analysis Workshop',
+    'IT Service Management'
+  ],
   Cybersecurity: [
     'Advanced Threat Hunting',
     'Secure Systems Architecture',
@@ -69,17 +76,61 @@ const MAJOR_SUBJECTS: Record<Major, string[]> = {
   ]
 };
 
+const CUSTOM_MAJOR_SUBJECTS = new Map<Major, Set<string>>();
+
+function normalizeMajor(major: string): Major | null {
+  if (!major) {
+    return null;
+  }
+
+  return AVAILABLE_MAJORS.find((item) => item === major) ?? null;
+}
+
+function getCustomSubjects(major: Major): string[] {
+  const custom = CUSTOM_MAJOR_SUBJECTS.get(major);
+  if (!custom) {
+    return [];
+  }
+
+  return Array.from(custom.values());
+}
+
+export function registerSubjectForMajor(major: string, subject: string): void {
+  const normalizedMajor = normalizeMajor(major);
+
+  if (!normalizedMajor) {
+    return;
+  }
+
+  const trimmedSubject = subject.trim();
+  if (!trimmedSubject) {
+    return;
+  }
+
+  const existing = CUSTOM_MAJOR_SUBJECTS.get(normalizedMajor) ?? new Set<string>();
+  existing.add(trimmedSubject);
+  CUSTOM_MAJOR_SUBJECTS.set(normalizedMajor, existing);
+}
+
 export function getSubjectsForMajor(major: string): string[] {
   if (!major) {
     return [];
   }
 
-  const normalizedMajor = AVAILABLE_MAJORS.find((item) => item === major);
+  const normalizedMajor = normalizeMajor(major);
   if (!normalizedMajor) {
     return [];
   }
 
-  return MAJOR_SUBJECTS[normalizedMajor] ?? [];
+  const catalog = MAJOR_SUBJECTS[normalizedMajor] ?? [];
+  const custom = getCustomSubjects(normalizedMajor);
+
+  if (!custom.length) {
+    return catalog;
+  }
+
+  const combined = new Set<string>([...catalog, ...custom]);
+  return Array.from(combined.values());
 }
 
 export function listMajorsWithSubjects(): Array<{ major: Major; subjects: string[] }> {
@@ -127,11 +178,14 @@ const COURSE_METADATA: Record<string, CourseMetadata> = {
   'Autonomous Systems Lab': { instructor: 'Professor Malik Chen', credits: 3 },
   'Human-Centered AI Design': { instructor: 'Dr. Priya Raman', credits: 4 },
   'Generative AI Studio': { instructor: 'Professor Aaron Patel', credits: 3 },
+  'Intro to Programming': { instructor: 'Dr. Ada Lovelace', credits: 3 },
+  'Network Infrastructure Lab': { instructor: 'Professor Ryan Martinez', credits: 3 },
+  'Systems Analysis Workshop': { instructor: 'Dr. Sarah Wilson', credits: 3 },
+  'IT Service Management': { instructor: 'Professor James Lee', credits: 3 },
   'Advanced Threat Hunting': { instructor: 'Dr. Chris Johnson', credits: 4 },
   'Secure Systems Architecture': { instructor: 'Professor Jessica Wu', credits: 3 },
   'Incident Response Workshop': { instructor: 'Dr. Michael Davis', credits: 3 },
   'Cloud Security Operations': { instructor: 'Professor Ryan Martinez', credits: 4 },
-  'Intro to Programming': { instructor: 'Dr. Ada Lovelace', credits: 3 },
   'Data Structures & Algorithms': { instructor: 'Dr. Grace Hopper', credits: 4 },
   'Neuroscience Frontiers': { instructor: 'Professor Malik Chen', credits: 4 },
   'Immersive Visualization Studio': { instructor: 'Professor Aaron Patel', credits: 4 },

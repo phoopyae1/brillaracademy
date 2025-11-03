@@ -153,6 +153,7 @@ export type TeacherScheduleSlot = {
   classroomName: string;
   classroomLocation: string;
   studentGroup: string;
+  majorFocus: string;
 };
 
 export type TeacherRosterStudent = {
@@ -181,6 +182,7 @@ export type TeachingAssignment = {
   startTime: string;
   endTime: string;
   studentGroup: string;
+  majorFocus: string;
   assignedBy: number | null;
   assignedAt: string;
   classroomName?: string;
@@ -319,8 +321,7 @@ export async function createStudent(
 export async function fetchMajorSubjectCatalog(): Promise<MajorSubjectCatalogEntry[]> {
   try {
     const data = await apiRequest<{ majors?: MajorSubjectCatalogEntry[] }>('/students/public/majors', {
-      cache: 'force-cache',
-      next: { revalidate: 300 }
+      cache: 'no-store'
     });
 
     return data.majors ?? [];
@@ -425,6 +426,7 @@ export async function createTeachingAssignment(
     startTime: string;
     endTime: string;
     studentGroup?: string;
+    majorFocus: string;
   }
 ): Promise<TeachingAssignment> {
   const data = await apiRequest<{ assignment: TeachingAssignment }>('/teaching/assignments', {

@@ -35,6 +35,7 @@ import {
   listFeePayments,
   recordFeePayment,
   listStudents,
+  fetchMajorSubjectCatalog,
   type StaffAccount,
   type TeacherDashboard,
   type TeachingAssignment,
@@ -43,7 +44,8 @@ import {
   type Student,
   type GradeRecord,
   type TeacherRosterStudent,
-  type TeacherScheduleSlot
+  type TeacherScheduleSlot,
+  type MajorSubjectCatalogEntry
 } from '@/lib/db';
 
 type StaffSession = { token: string; staff: StaffAccount };
@@ -88,6 +90,7 @@ type AssignmentFormState = {
   startTime: string;
   endTime: string;
   studentGroup: string;
+  majorFocus: string;
   status: AsyncState;
   message: string;
 };
@@ -111,6 +114,7 @@ export default function ForgePortalPage() {
   const [assignments, setAssignments] = useState<TeachingAssignment[]>([]);
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [teachers, setTeachers] = useState<StaffAccount[]>([]);
+  const [majorCatalog, setMajorCatalog] = useState<MajorSubjectCatalogEntry[]>([]);
   const [payments, setPayments] = useState<FeePayment[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
 
@@ -133,13 +137,14 @@ export default function ForgePortalPage() {
   useEffect(() => {
     if (!session) {
       setTeacherDashboard(null);
-      setAssignments([]);
-      setClassrooms([]);
-      setTeachers([]);
-      setPayments([]);
-      setStudents([]);
-      return;
-    }
+    setAssignments([]);
+    setClassrooms([]);
+    setTeachers([]);
+    setMajorCatalog([]);
+    setPayments([]);
+    setStudents([]);
+    return;
+  }
 
     let cancelled = false;
     setLoading(true);
@@ -153,16 +158,18 @@ export default function ForgePortalPage() {
             setTeacherDashboard(dashboard);
           }
         } else if (session.staff.role === 'IT_ADMIN') {
-          const [assignmentList, classroomList, staffList] = await Promise.all([
+          const [assignmentList, classroomList, staffList, majors] = await Promise.all([
             listTeachingAssignments(session.token),
             listClassrooms(session.token),
-            listStaff(session.token)
+            listStaff(session.token),
+            fetchMajorSubjectCatalog()
           ]);
 
           if (!cancelled) {
             setAssignments(assignmentList);
             setClassrooms(classroomList);
             setTeachers(staffList.filter((member) => member.role === 'TEACHER'));
+            setMajorCatalog(majors);
           }
         } else if (session.staff.role === 'STUDENT_ADMIN') {
           const [paymentList, studentList] = await Promise.all([
@@ -272,7 +279,8 @@ export default function ForgePortalPage() {
       weekday: input.weekday,
       startTime: input.startTime,
       endTime: input.endTime,
-      studentGroup: input.studentGroup
+      studentGroup: input.studentGroup || undefined,
+      majorFocus: input.majorFocus
     };
 
     const assignment = await createTeachingAssignment(session.token, payload);
@@ -405,6 +413,7 @@ export default function ForgePortalPage() {
               assignments={assignments}
               classrooms={classrooms}
               teachers={teachers}
+              majors={majorCatalog}
               onCreateAssignment={handleCreateAssignment}
             />
           )}
@@ -777,12 +786,13 @@ type ItAdminWorkspaceProps = {
   assignments: TeachingAssignment[];
   classrooms: Classroom[];
   teachers: StaffAccount[];
+  majors: MajorSubjectCatalogEntry[];
   onCreateAssignment: (
     input: Omit<AssignmentFormState, 'status' | 'message'>
   ) => Promise<TeachingAssignment>;
 };
 
-function ItAdminWorkspace({ loading, assignments, classrooms, teachers, onCreateAssignment }: ItAdminWorkspaceProps) {
+function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, onCreateAssignment }: ItAdminWorkspaceProps) {
   const [formState, setFormState] = useState<AssignmentFormState>({
     teacherId: '',
     classroomId: '',
@@ -792,17 +802,29 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, onCreate
     startTime: '09:00',
     endTime: '10:00',
     studentGroup: 'Core Cohort',
+    majorFocus: '',
     status: 'idle',
     message: ''
   });
 
   const teacherMap = useMemo(() => new Map(teachers.map((teacher) => [teacher.id, teacher.displayName])), [teachers]);
   const classroomMap = useMemo(() => new Map(classrooms.map((room) => [room.id, room])), [classrooms]);
+  useEffect(() => {
+    if (!formState.majorFocus && majors.length) {
+      setFormState((prev) => ({ ...prev, majorFocus: majors[0]?.major ?? '' }));
+    }
+  }, [majors, formState.majorFocus]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!formState.teacherId || !formState.classroomId || !formState.courseCode || !formState.courseTitle) {
+    if (
+      !formState.teacherId ||
+      !formState.classroomId ||
+      !formState.courseCode ||
+      !formState.courseTitle ||
+      !formState.majorFocus
+    ) {
       setFormState((prev) => ({ ...prev, status: 'error', message: 'Complete every field before assigning a classroom.' }));
       return;
     }
@@ -810,16 +832,17 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, onCreate
     setFormState((prev) => ({ ...prev, status: 'submitting', message: 'Assigning classroom…' }));
 
     try {
-    const assignment = await onCreateAssignment({
-      teacherId: formState.teacherId,
-      classroomId: formState.classroomId,
-      courseCode: formState.courseCode,
-      courseTitle: formState.courseTitle,
-      weekday: formState.weekday,
+      const assignment = await onCreateAssignment({
+        teacherId: formState.teacherId,
+        classroomId: formState.classroomId,
+        courseCode: formState.courseCode,
+        courseTitle: formState.courseTitle,
+        weekday: formState.weekday,
       startTime: formState.startTime,
       endTime: formState.endTime,
-      studentGroup: formState.studentGroup
-    });
+      studentGroup: formState.studentGroup,
+      majorFocus: formState.majorFocus
+      });
 
       setFormState((prev) => ({
         teacherId: prev.teacherId,
@@ -830,6 +853,7 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, onCreate
         startTime: prev.startTime,
         endTime: prev.endTime,
         studentGroup: prev.studentGroup,
+        majorFocus: prev.majorFocus,
         status: 'success',
         message: `Assigned ${assignment.courseCode} to ${teacherMap.get(assignment.teacherId) ?? 'teacher'} successfully.`
       }));
@@ -861,6 +885,11 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, onCreate
 
           {formState.status === 'error' && <Alert severity="error">{formState.message}</Alert>}
           {formState.status === 'success' && <Alert severity="success">{formState.message}</Alert>}
+          {!majors.length && (
+            <Alert severity="warning">
+              Major catalog data is unavailable right now. Teachers can be assigned once majors are restored.
+            </Alert>
+          )}
 
           <Grid container spacing={2.5}>
             <Grid item xs={12} md={6}>
@@ -892,6 +921,23 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, onCreate
                   {classrooms.map((room) => (
                     <MenuItem key={room.id} value={String(room.id)}>
                       {room.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth required disabled={!majors.length}>
+                <InputLabel id="major-select">Major focus</InputLabel>
+                <Select
+                  labelId="major-select"
+                  label="Major focus"
+                  value={formState.majorFocus}
+                  onChange={(event) => setFormState((prev) => ({ ...prev, majorFocus: event.target.value }))}
+                >
+                  {majors.map((major) => (
+                    <MenuItem key={major.major} value={major.major}>
+                      {major.major}
                     </MenuItem>
                   ))}
                 </Select>
@@ -996,6 +1042,7 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, onCreate
                 <TableCell>Teacher</TableCell>
                 <TableCell>Classroom</TableCell>
                 <TableCell>Schedule</TableCell>
+                <TableCell>Major</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -1026,11 +1073,14 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, onCreate
                       {assignment.startTime} – {assignment.endTime}
                     </Typography>
                   </TableCell>
+                  <TableCell>
+                    <Chip label={assignment.majorFocus} size="small" color="info" variant="outlined" />
+                  </TableCell>
                 </TableRow>
               ))}
               {!enrichedAssignments.length && (
                 <TableRow>
-                  <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                  <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                     No classroom assignments have been created yet.
                   </TableCell>
                 </TableRow>

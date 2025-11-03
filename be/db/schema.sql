@@ -136,6 +136,7 @@ CREATE TABLE IF NOT EXISTS teaching_assignments (
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
     student_group TEXT,
+    major_focus TEXT NOT NULL DEFAULT 'Undeclared',
     assigned_by INTEGER REFERENCES staff_accounts(id),
     assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

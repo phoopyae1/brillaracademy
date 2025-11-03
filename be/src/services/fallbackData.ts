@@ -568,6 +568,7 @@ export const fallbackTeachingAssignments: TeachingAssignment[] = [
     startTime: '09:00',
     endTime: '10:15',
     studentGroup: 'Biomedical Cohort A',
+    majorFocus: 'Biomedical Engineering',
     assignedBy: 1,
     assignedAt: '2024-08-08T14:00:00Z'
   },
@@ -581,6 +582,7 @@ export const fallbackTeachingAssignments: TeachingAssignment[] = [
     startTime: '13:00',
     endTime: '14:15',
     studentGroup: 'Data Science Scholars',
+    majorFocus: 'Data Science',
     assignedBy: 1,
     assignedAt: '2024-08-08T14:30:00Z'
   },
@@ -594,6 +596,7 @@ export const fallbackTeachingAssignments: TeachingAssignment[] = [
     startTime: '14:30',
     endTime: '16:00',
     studentGroup: 'Advanced Chem Labs',
+    majorFocus: 'Environmental Science',
     assignedBy: 1,
     assignedAt: '2024-08-08T15:00:00Z'
   }

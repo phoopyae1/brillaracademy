@@ -9,6 +9,7 @@ import {
 } from '../services/teachingService.js';
 import { recordStudentGrade } from '../services/academicService.js';
 import { findStaffById } from '../services/staffService.js';
+import { AVAILABLE_MAJORS } from '../utils/majors.js';
 
 const router = Router();
 
@@ -22,7 +23,8 @@ const assignmentSchema = z.object({
   weekday: z.enum(weekdays),
   startTime: z.string().regex(/^[0-2]\d:[0-5]\d$/, 'Use HH:MM 24-hour time format.'),
   endTime: z.string().regex(/^[0-2]\d:[0-5]\d$/, 'Use HH:MM 24-hour time format.'),
-  studentGroup: z.string().min(2).optional()
+  studentGroup: z.string().min(2).optional(),
+  majorFocus: z.enum(AVAILABLE_MAJORS as [string, ...string[]])
 });
 
 const gradeSchema = z.object({
