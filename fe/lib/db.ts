@@ -8,6 +8,7 @@ export type Student = {
   role: string | null;
   primaryInterest: string | null;
   createdAt: string;
+  selectedSubjects?: string[];
 };
 
 export type GradeRecord = {
@@ -134,6 +135,11 @@ export type ClassroomEnrollment = {
   studentId: number;
   status: 'enrolled' | 'waitlisted';
   registeredAt: string;
+};
+
+export type MajorSubjectCatalogEntry = {
+  major: string;
+  subjects: string[];
 };
 
 export type TeacherScheduleSlot = {
@@ -292,12 +298,49 @@ export async function listStudents(token?: string): Promise<Student[]> {
 
 export async function createStudent(
   token: string,
-  input: { firstName: string; lastName: string; email: string; password: string; primaryInterest: string }
+  input: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    password: string;
+    primaryInterest: string;
+    selectedSubjects?: string[];
+  }
 ): Promise<Student> {
   const data = await apiRequest<{ student: Student }>('/students', {
     method: 'POST',
     body: { ...input, role: 'Student' },
     token
+  });
+
+  return data.student;
+}
+
+export async function fetchMajorSubjectCatalog(): Promise<MajorSubjectCatalogEntry[]> {
+  try {
+    const data = await apiRequest<{ majors?: MajorSubjectCatalogEntry[] }>('/students/public/majors', {
+      cache: 'force-cache',
+      next: { revalidate: 300 }
+    });
+
+    return data.majors ?? [];
+  } catch (error) {
+    console.error('Failed to fetch major catalog', error);
+    return [];
+  }
+}
+
+export async function selfRegisterStudent(input: {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  primaryInterest: string;
+  selectedSubjects: string[];
+}): Promise<Student> {
+  const data = await apiRequest<{ student: Student }>('/students/public/self-register', {
+    method: 'POST',
+    body: input
   });
 
   return data.student;

@@ -14,6 +14,7 @@ export type Student = {
   role: string | null;
   primaryInterest: string | null;
   createdAt: string;
+  selectedSubjects?: string[];
 };
 
 export type TimetableEntry = {
@@ -67,6 +68,7 @@ export type CreateStudentInput = {
   password: string;
   role?: string;
   primaryInterest: string;
+  selectedSubjects?: string[];
 };
 
 export type StaffRole = 'IT_ADMIN' | 'TEACHER' | 'STUDENT_ADMIN';
