@@ -129,19 +129,31 @@ export default function ClassroomSelfRegistrationCard({
       .filter((value): value is string => Boolean(value));
   }, []);
 
-  const filteredClassrooms = useMemo(() => {
+  const { prioritizedClassrooms, majorMatchIds, hasMajorSpecificClassrooms } = useMemo(() => {
     if (!normalizedMajor) {
-      return classroomList;
+      return {
+        prioritizedClassrooms: classroomList,
+        majorMatchIds: new Set<number>(),
+        hasMajorSpecificClassrooms: false
+      };
     }
 
-    return classroomList.filter((room) => {
+    const decorated = classroomList.map((room) => {
       const focusAreas = deriveFocusAreas(room);
-      if (!focusAreas.length) {
-        return true;
-      }
+      const matches = focusAreas.some((area) => area.toLowerCase() === normalizedMajor);
 
-      return focusAreas.some((area) => area.toLowerCase() === normalizedMajor);
+      return { room, matches };
     });
+
+    decorated.sort((a, b) => Number(b.matches) - Number(a.matches));
+
+    const matchIds = new Set(decorated.filter((entry) => entry.matches).map((entry) => entry.room.id));
+
+    return {
+      prioritizedClassrooms: decorated.map((entry) => entry.room),
+      majorMatchIds: matchIds,
+      hasMajorSpecificClassrooms: matchIds.size > 0
+    };
   }, [classroomList, normalizedMajor, deriveFocusAreas]);
 
   if (!classroomList.length) {
@@ -154,24 +166,6 @@ export default function ClassroomSelfRegistrationCard({
           </Typography>
           <Typography variant="body2" color="text.secondary">
             Administrators have not published any shared classrooms yet. Check back soon to claim a collaborative space.
-          </Typography>
-        </Stack>
-      </Paper>
-    );
-  }
-
-  if (!filteredClassrooms.length) {
-    return (
-      <Paper elevation={0} sx={{  p: 3, backgroundColor: '#ffffff', border: '1px solid', borderColor: 'rgba(0,0,0,0.08)' }}>
-        <Stack spacing={2} alignItems="center" textAlign="center">
-          <WorkspacePremiumRoundedIcon color="primary" fontSize="large" />
-          <Typography variant="h6" fontWeight={700}>
-            Major-specific classrooms coming soon
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {studentMajor
-              ? `We’re preparing collaborative spaces tailored for the ${studentMajor} major. Please check back later or contact the IT team for assistance.`
-              : 'Update your major to see recommended collaborative classrooms.'}
           </Typography>
         </Stack>
       </Paper>
@@ -191,7 +185,7 @@ export default function ClassroomSelfRegistrationCard({
           <Typography variant="body2" color="text.secondary">
             Browse spaces curated by the IT team and reserve a seat for project work, study groups, or club meetups.
           </Typography>
-          {studentMajor && (
+          {studentMajor && hasMajorSpecificClassrooms && (
             <Chip
               label={`Showing classes for ${studentMajor}`}
               size="small"
@@ -200,10 +194,16 @@ export default function ClassroomSelfRegistrationCard({
               sx={{ alignSelf: 'flex-start' }}
             />
           )}
+          {studentMajor && !hasMajorSpecificClassrooms && (
+            <Alert severity="info" variant="outlined">
+              We don’t have a dedicated classroom for the {studentMajor} major yet. Showing all available collaborative spaces
+              so you can still reserve a seat.
+            </Alert>
+          )}
         </Stack>
 
         <Stack spacing={2.5}>
-          {filteredClassrooms.map((classroom) => {
+          {prioritizedClassrooms.map((classroom) => {
             const enrollment = enrollmentLookup.get(classroom.id);
             const state = registrationStates[classroom.id];
             const progress = Math.min(
@@ -217,6 +217,7 @@ export default function ClassroomSelfRegistrationCard({
             const nonMajorResources = classroom.resources.filter((resource) => !/^\s*Major:/i.test(resource));
             const displayedResources = nonMajorResources.slice(0, 4);
             const extraResources = Math.max(nonMajorResources.length - displayedResources.length, 0);
+            const isRecommended = majorMatchIds.has(classroom.id);
 
             return (
               <Paper
@@ -256,6 +257,14 @@ export default function ClassroomSelfRegistrationCard({
                         <Chip key={area} label={area} size="small" color="secondary" variant="outlined" />
                       ))}
                     </Stack>
+                  )}
+                  {isRecommended && (
+                    <Chip
+                      label="Recommended for your major"
+                      size="small"
+                      color="secondary"
+                      variant="outlined"
+                    />
                   )}
 
                   <Stack spacing={1.5}>
