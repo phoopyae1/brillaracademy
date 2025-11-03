@@ -303,7 +303,13 @@ export const fallbackClassrooms: Classroom[] = [
     name: 'Innovation Hub 201',
     location: 'North Campus - Building B',
     capacity: 28,
-    resources: ['Interactive Whiteboard', '3D Printer', 'Video Conferencing'],
+    resources: [
+      'Interactive Whiteboard',
+      '3D Printer',
+      'Video Conferencing',
+      'Major: Biomedical Engineering',
+      'Major: Artificial Intelligence'
+    ],
     createdBy: 1,
     createdAt: new Date('2024-08-05T09:00:00Z').toISOString()
   },
@@ -312,7 +318,13 @@ export const fallbackClassrooms: Classroom[] = [
     name: 'Wellness Studio 3A',
     location: 'South Campus - Health Center',
     capacity: 22,
-    resources: ['Yoga Mats', 'Projection System'],
+    resources: [
+      'Yoga Mats',
+      'Projection System',
+      'Major: Environmental Science',
+      'Major: International Relations',
+      'Major: Hospitality Management'
+    ],
     createdBy: 1,
     createdAt: new Date('2024-08-06T11:30:00Z').toISOString()
   },
@@ -321,7 +333,14 @@ export const fallbackClassrooms: Classroom[] = [
     name: 'Analytics Lab 410',
     location: 'Main Campus - Tech Tower',
     capacity: 32,
-    resources: ['High-Performance Workstations', 'Data Wall'],
+    resources: [
+      'High-Performance Workstations',
+      'Data Wall',
+      'Major: Data Science',
+      'Major: Cybersecurity',
+      'Major: Digital Media Design',
+      'Major: Business Administration'
+    ],
     createdBy: 1,
     createdAt: new Date('2024-08-07T14:15:00Z').toISOString()
   }

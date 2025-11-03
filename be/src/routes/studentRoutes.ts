@@ -8,6 +8,7 @@ import {
   listStudents,
   registerStudentForSemesterCourse
 } from '../services/studentService.js';
+import { AVAILABLE_MAJORS } from '../utils/majors.js';
 
 const router = Router();
 
@@ -37,7 +38,7 @@ const createStudentSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
   role: z.string().optional(),
-  primaryInterest: z.string().optional().nullable()
+  primaryInterest: z.enum(AVAILABLE_MAJORS as [string, ...string[]])
 });
 
 const registerForCourseSchema = z.object({

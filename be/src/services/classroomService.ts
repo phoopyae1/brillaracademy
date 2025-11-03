@@ -7,19 +7,66 @@ let nextClassroomId = fallbackClassrooms.length + 1;
 let inMemoryClassroomEnrollments = [...fallbackClassroomEnrollments];
 let nextClassroomEnrollmentId = fallbackClassroomEnrollments.length + 1;
 
+function parseResourceList(row: any): string[] {
+  if (Array.isArray(row.resources)) {
+    return row.resources;
+  }
+
+  if (typeof row.resources === 'string') {
+    try {
+      return JSON.parse(row.resources);
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+function extractFocusAreasFromResources(resources: string[]): string[] {
+  return resources
+    .map((resource) => {
+      if (typeof resource !== 'string') {
+        return null;
+      }
+
+      const match = resource.match(/^\s*Major:\s*(.+)$/i);
+      return match ? match[1].trim() : null;
+    })
+    .filter((value): value is string => Boolean(value));
+}
+
 function normalizeClassroom(row: any): Classroom {
+  const resources = parseResourceList(row);
+  const focusSource = row.focus_majors ?? row.focusMajors ?? row.focusAreas;
+  let focusAreas: string[] = [];
+
+  if (Array.isArray(focusSource)) {
+    focusAreas = focusSource.filter((item): item is string => typeof item === 'string');
+  } else if (typeof focusSource === 'string') {
+    try {
+      const parsed = JSON.parse(focusSource);
+      if (Array.isArray(parsed)) {
+        focusAreas = parsed.filter((item): item is string => typeof item === 'string');
+      }
+    } catch {
+      focusAreas = [];
+    }
+  }
+
+  if (!focusAreas.length) {
+    focusAreas = extractFocusAreasFromResources(resources);
+  }
+
   return {
     id: row.id,
     name: row.name,
     location: row.location,
     capacity: row.capacity,
-    resources: Array.isArray(row.resources)
-      ? row.resources
-      : typeof row.resources === 'string'
-        ? JSON.parse(row.resources)
-        : [],
+    resources,
     createdBy: row.created_by ?? null,
-    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at
+    createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    focusAreas
   };
 }
 
@@ -102,6 +149,7 @@ export async function createClassroom(
   const resources = input.resources ?? [];
 
   if (!pool) {
+    const focusAreas = extractFocusAreasFromResources(resources);
     const classroom: Classroom = {
       id: nextClassroomId++,
       name: input.name,
@@ -109,7 +157,8 @@ export async function createClassroom(
       capacity: input.capacity,
       resources,
       createdBy: createdBy ?? null,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      focusAreas
     };
 
     inMemoryClassrooms = [classroom, ...inMemoryClassrooms];
@@ -260,12 +309,16 @@ export async function listClassroomsWithAvailability(): Promise<ClassroomAvailab
   return classrooms.map((room) => {
     const seatsFilled = counts.get(room.id) ?? 0;
     const seatsAvailable = Math.max(room.capacity - seatsFilled, 0);
+    const focusAreas = room.focusAreas?.length
+      ? room.focusAreas
+      : extractFocusAreasFromResources(room.resources);
 
     return {
       ...room,
       seatsFilled,
       seatsAvailable,
-      isFull: seatsAvailable === 0
+      isFull: seatsAvailable === 0,
+      focusAreas
     } satisfies ClassroomAvailability;
   });
 }

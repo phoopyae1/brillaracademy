@@ -10,8 +10,10 @@ import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import Divider from '@mui/material/Divider';
 import Box from '@mui/material/Box';
+import MenuItem from '@mui/material/MenuItem';
 
 import type { Student } from '@/lib/db';
+import { AVAILABLE_MAJORS } from '@/lib/majors';
 
 export type StudentProvisioningFormProps = {
   token: string;
@@ -21,7 +23,7 @@ export type StudentProvisioningFormProps = {
     lastName: string;
     email: string;
     password: string;
-    primaryInterest?: string;
+    primaryInterest: string;
   }) => Promise<Student>;
 };
 
@@ -97,7 +99,24 @@ export default function StudentProvisioningForm({ token, onStudentCreated, creat
             fullWidth
             required
           />
-          <TextField name="primaryInterest" label="Major" fullWidth required />
+          <TextField
+            name="primaryInterest"
+            label="Major"
+            fullWidth
+            required
+            select
+            defaultValue=""
+            helperText="Assign the student's primary program to tailor their class recommendations."
+          >
+            <MenuItem value="" disabled>
+              Select a major
+            </MenuItem>
+            {AVAILABLE_MAJORS.map((major) => (
+              <MenuItem key={major} value={major}>
+                {major}
+              </MenuItem>
+            ))}
+          </TextField>
         </Stack>
 
         <Divider sx={{ borderStyle: 'dashed', borderColor: 'secondary.light', opacity: 0.5 }} />

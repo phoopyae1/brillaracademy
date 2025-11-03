@@ -159,7 +159,7 @@ export default function AdminPortalPage() {
     lastName: string;
     email: string;
     password: string;
-    primaryInterest?: string;
+    primaryInterest: string;
   }) => {
     if (!authToken || !canProvisionStudents) {
       throw new Error('You do not have permission to create student accounts.');
