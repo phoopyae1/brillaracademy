@@ -14,6 +14,7 @@ import { listClassrooms } from './classroomService.js';
 import { listStudents } from './studentService.js';
 import { findStaffById } from './staffService.js';
 import { listTeacherGrades } from './academicService.js';
+import { getSubjectsForMajor } from '../utils/majors.js';
 
 let inMemoryAssignments = [...fallbackTeachingAssignments];
 let inMemoryRosters = [...fallbackTeacherRosters];
@@ -147,7 +148,38 @@ export async function assignTeacherToClassroom(
       ]
     );
 
-    return normalizeAssignment(rows[0]);
+    const assignment = normalizeAssignment(rows[0]);
+
+    // Auto-enroll students with matching majors
+    try {
+      const allStudents = await listStudents();
+      const relevantStudents = allStudents.filter((student) => {
+        if (!student.primaryInterest) return false;
+        const subjectsForMajor = getSubjectsForMajor(student.primaryInterest);
+        return subjectsForMajor.includes(input.courseTitle);
+      });
+
+      for (const student of relevantStudents) {
+        // Check if already enrolled
+        const existingRoster = await pool.query(
+          `SELECT id FROM teacher_rosters WHERE teacher_id = $1 AND course_code = $2 AND student_id = $3`,
+          [input.teacherId, input.courseCode, student.id]
+        );
+
+        if (existingRoster.rows.length === 0) {
+          await pool.query(
+            `INSERT INTO teacher_rosters (teacher_id, course_code, course_title, student_id, status)
+             VALUES ($1, $2, $3, $4, 'enrolled')`,
+            [input.teacherId, input.courseCode, input.courseTitle, student.id]
+          );
+        }
+      }
+    } catch (enrollmentError) {
+      console.error('Failed to auto-enroll students for teaching assignment', enrollmentError);
+      // Don't fail the whole operation if enrollment fails
+    }
+
+    return assignment;
   } catch (error) {
     console.error('Failed to persist teaching assignment, falling back to memory', error);
     const assignment: TeachingAssignment = {

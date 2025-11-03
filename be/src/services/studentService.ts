@@ -22,8 +22,9 @@ import {
   listRegistrationWindows,
   findCourseOffering
 } from './academicService.js';
-import { listStudentFeePayments } from './financeService.js';
+import { listStudentFeePayments, recordFeePayment } from './financeService.js';
 import { listClassroomEnrollmentsForStudent } from './classroomService.js';
+import { getCourseMetadata } from '../utils/majors.js';
 
 type StudentSubjectSelection = {
   studentId: number;
@@ -169,6 +170,108 @@ export async function fetchStudentById(id: number): Promise<Student | null> {
   }
 }
 
+async function createCourseDataForStudent(studentId: number, subjects: string[], pool: any) {
+  const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+  const timeSlots = [
+    { start: '09:00', end: '10:30' },
+    { start: '11:00', end: '12:30' },
+    { start: '14:00', end: '15:30' },
+    { start: '16:00', end: '17:30' }
+  ];
+  const locations = [
+    'Tech Hall 101',
+    'Tech Hall 105',
+    'Innovation Hub 201',
+    'Main Campus - Building A',
+    'North Campus - Building B',
+    'Analytics Lab 410'
+  ];
+
+  for (let i = 0; i < subjects.length; i++) {
+    const subject = subjects[i];
+    const metadata = getCourseMetadata(subject);
+    
+    if (!metadata) {
+      console.warn(`No metadata found for subject: ${subject}`);
+      continue;
+    }
+
+    const registration: ClassRegistration = {
+      id: nextRegistrationId++,
+      studentId,
+      className: subject,
+      instructor: metadata.instructor,
+      status: 'registered',
+      registeredAt: new Date().toISOString(),
+      semester: 'Fall 2024',
+      credits: metadata.credits,
+      confirmedBy: null
+    };
+
+    // Create timetable entry
+    const weekday = weekdays[i % weekdays.length];
+    const timeSlot = timeSlots[i % timeSlots.length];
+    const location = locations[i % locations.length];
+    const timetableEntry: TimetableEntry = {
+      id: inMemoryTimetables.length + 1,
+      studentId,
+      weekday,
+      startTime: timeSlot.start,
+      endTime: timeSlot.end,
+      subject,
+      location
+    };
+
+    if (pool) {
+      try {
+        // Insert registration
+        const regResult = await pool.query(
+          `INSERT INTO class_registrations (student_id, class_name, instructor, status, semester, credits, confirmed_by, registered_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+           RETURNING id, student_id AS "studentId", class_name AS "className", instructor, status,
+                     semester, credits, confirmed_by AS "confirmedBy",
+                     to_char(registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "registeredAt"`,
+          [studentId, subject, metadata.instructor, 'registered', 'Fall 2024', metadata.credits, null]
+        );
+
+        // Insert timetable
+        await pool.query(
+          `INSERT INTO timetables (student_id, weekday, start_time, end_time, subject, location)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [studentId, weekday, timeSlot.start, timeSlot.end, subject, location]
+        );
+
+        // Create fee
+        const feeAmount = metadata.credits * 350; // $350 per credit
+        await pool.query(
+          `INSERT INTO fee_payments (student_id, amount, description, status, due_date)
+           VALUES ($1, $2, $3, $4, NOW() + INTERVAL '30 days')`,
+          [studentId, feeAmount, `${subject} - Registration Fee`, 'pending']
+        );
+      } catch (error) {
+        console.error(`Failed to create course data for ${subject}:`, error);
+      }
+    } else {
+      // In-memory mode
+      inMemoryRegistrations = [registration, ...inMemoryRegistrations];
+      inMemoryTimetables = [...inMemoryTimetables, timetableEntry];
+      
+      // Add fee payment
+      const feeAmount = metadata.credits * 350;
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 30);
+      
+      await recordFeePayment({
+        studentId,
+        amount: feeAmount,
+        description: `${subject} - Registration Fee`,
+        status: 'pending',
+        dueDate: dueDate.toISOString()
+      });
+    }
+  }
+}
+
 export async function createStudent(input: CreateStudentInput): Promise<Student> {
   const { firstName, lastName, email, password, role, primaryInterest, selectedSubjects } = input;
   const hashedPassword = bcrypt.hashSync(password, 10);
@@ -190,6 +293,12 @@ export async function createStudent(input: CreateStudentInput): Promise<Student>
     inMemoryStudents = [student, ...inMemoryStudents];
     inMemorySecrets.set(student.id, hashedPassword);
     rememberSubjectSelection(student, cleanedSubjects);
+    
+    // Create course data for the student
+    if (cleanedSubjects.length > 0) {
+      await createCourseDataForStudent(student.id, cleanedSubjects, null);
+    }
+    
     return applySubjectSelection(student);
   }
 
@@ -203,6 +312,12 @@ export async function createStudent(input: CreateStudentInput): Promise<Student>
 
     const student = normalizeStudent(rows[0]);
     rememberSubjectSelection(student, cleanedSubjects);
+    
+    // Create course data for the student
+    if (cleanedSubjects.length > 0) {
+      await createCourseDataForStudent(student.id, cleanedSubjects, pool);
+    }
+    
     return applySubjectSelection({ ...student, selectedSubjects: cleanedSubjects });
   } catch (error) {
     console.error('Failed to create student', error);
