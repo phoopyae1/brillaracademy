@@ -31,14 +31,20 @@ router.post('/admin/login', async (req, res) => {
   const account = await findStaffByEmail(email);
 
   if (!account) {
+    console.warn(`Login attempt failed: Staff account not found for email "${email}"`);
     return res.status(401).json({ error: 'Invalid credentials.' });
   }
 
-  const passwordMatches = await import('bcryptjs').then(({ default: bcrypt }) =>
-    bcrypt.compare(password, account.passwordHash)
-  );
+  if (!account.passwordHash) {
+    console.error(`Login attempt failed: No password hash found for account "${email}" (ID: ${account.id})`);
+    return res.status(401).json({ error: 'Invalid credentials.' });
+  }
+
+  const bcrypt = (await import('bcryptjs')).default;
+  const passwordMatches = await bcrypt.compare(password, account.passwordHash);
 
   if (!passwordMatches) {
+    console.warn(`Login attempt failed: Password mismatch for email "${email}"`);
     return res.status(401).json({ error: 'Invalid credentials.' });
   }
 

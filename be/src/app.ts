@@ -9,6 +9,7 @@ import classroomRoutes from './routes/classroomRoutes.js';
 import financeRoutes from './routes/financeRoutes.js';
 import examRoutes from './routes/examRoutes.js';
 import teachingRoutes from './routes/teachingRoutes.js';
+import systemRoutes from './routes/systemRoutes.js';
 
 export function createApp() {
   const app = express();
@@ -29,6 +30,7 @@ export function createApp() {
   app.use('/api/finance', financeRoutes);
   app.use('/api/exams', examRoutes);
   app.use('/api/teaching', teachingRoutes);
+  app.use('/api/system', systemRoutes);
 
   return app;
 }

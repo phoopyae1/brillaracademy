@@ -123,10 +123,20 @@ export type Classroom = {
   focusAreas?: string[];
 };
 
+export type ClassroomCourse = {
+  courseCode: string;
+  courseTitle: string;
+  weekday: string;
+  startTime: string;
+  endTime: string;
+  majorFocus: string;
+};
+
 export type ClassroomAvailability = Classroom & {
   seatsFilled: number;
   seatsAvailable: number;
   isFull: boolean;
+  courses?: ClassroomCourse[];
 };
 
 export type ClassroomEnrollment = {
@@ -183,6 +193,7 @@ export type TeachingAssignment = {
   endTime: string;
   studentGroup: string;
   majorFocus: string;
+  semester: string;
   assignedBy: number | null;
   assignedAt: string;
   classroomName?: string;
@@ -191,6 +202,23 @@ export type TeachingAssignment = {
 };
 
 const DEFAULT_API_BASE_URL = 'http://localhost:4000/api';
+
+export async function getCurrentSemester(token: string): Promise<string> {
+  const data = await apiRequest<{ currentSemester: string }>('/system/settings/current-semester', {
+    method: 'GET',
+    token
+  });
+  return data.currentSemester || '1/2026';
+}
+
+export async function updateCurrentSemester(token: string, semester: string): Promise<string> {
+  const data = await apiRequest<{ currentSemester: string; message: string }>('/system/settings/current-semester', {
+    method: 'PUT',
+    body: { semester },
+    token
+  });
+  return data.currentSemester;
+}
 
 function resolveApiBaseUrl() {
   if (typeof window === 'undefined') {
@@ -427,6 +455,7 @@ export async function createTeachingAssignment(
     endTime: string;
     studentGroup?: string;
     majorFocus: string;
+    semester?: string;
   }
 ): Promise<TeachingAssignment> {
   const data = await apiRequest<{ assignment: TeachingAssignment }>('/teaching/assignments', {
@@ -436,6 +465,21 @@ export async function createTeachingAssignment(
   });
 
   return data.assignment;
+}
+
+export async function syncAssignmentEnrollments(
+  token: string,
+  assignmentId: number
+): Promise<{ enrolled: number; skipped: number; message: string; details?: string[] }> {
+  const data = await apiRequest<{ enrolled: number; skipped: number; message: string; details?: string[] }>(
+    `/teaching/assignments/${assignmentId}/sync-enrollments`,
+    {
+      method: 'POST',
+      token
+    }
+  );
+
+  return data;
 }
 
 export async function recordTeacherGrade(
@@ -466,9 +510,10 @@ export async function listClassrooms(token: string): Promise<Classroom[]> {
   return data.classrooms ?? [];
 }
 
-export async function listAvailableClassrooms(): Promise<ClassroomAvailability[]> {
+export async function listAvailableClassrooms(studentId?: number): Promise<ClassroomAvailability[]> {
+  const query = studentId ? `?studentId=${studentId}` : '';
   const data = await apiRequest<{ classrooms?: ClassroomAvailability[] }>(
-    '/classrooms/public/available',
+    `/classrooms/public/available${query}`,
     { cache: 'no-store' }
   );
 

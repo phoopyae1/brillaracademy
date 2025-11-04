@@ -68,6 +68,11 @@ export async function findStaffByEmail(email: string): Promise<(StaffAccount & {
     }
 
     const [row] = rows;
+    if (!row.password_hash) {
+      console.error(`Staff account found for "${email}" but password_hash is missing or null`);
+      return null;
+    }
+
     return { ...normalizeStaff(row), passwordHash: row.password_hash };
   } catch (error) {
     console.error('Failed to find staff account by email', error);

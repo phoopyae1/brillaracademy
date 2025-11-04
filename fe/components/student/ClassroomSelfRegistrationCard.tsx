@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -40,6 +41,7 @@ export default function ClassroomSelfRegistrationCard({
   enrollments,
   studentMajor
 }: ClassroomSelfRegistrationCardProps) {
+  const router = useRouter();
   const [classroomList, setClassroomList] = useState(classrooms);
   const [enrollmentList, setEnrollmentList] = useState(enrollments);
   const [registrationStates, setRegistrationStates] = useState<Record<number, RegistrationState>>({});
@@ -96,6 +98,12 @@ export default function ClassroomSelfRegistrationCard({
           message: `You have reserved a spot. ${formatRegisteredAt(enrollment.registeredAt)} registration confirmed.`
         }
       }));
+
+      // Refresh the page to show the new class registration in the dashboard
+      // Wait a bit to ensure the database transaction is committed
+      setTimeout(() => {
+        router.refresh();
+      }, 500);
     } catch (error: any) {
       const message =
         typeof error?.message === 'string' ? error.message : 'Unable to register for this classroom.';
@@ -110,51 +118,74 @@ export default function ClassroomSelfRegistrationCard({
     }
   };
 
-  const normalizedMajor = studentMajor?.trim().toLowerCase();
+  function normalizeMajorName(raw?: string | null): string | undefined {
+    if (!raw) return undefined;
+    const value = raw.trim().toLowerCase();
+    const aliases: Record<string, string> = {
+      'bme': 'biomedical engineering',
+      'bio med': 'biomedical engineering',
+      'biomed': 'biomedical engineering',
+      'biomedical eng': 'biomedical engineering'
+    };
+    return aliases[value] ?? value;
+  }
+
+  const normalizedMajor = normalizeMajorName(studentMajor);
 
   const deriveFocusAreas = useCallback((room: ClassroomAvailability): string[] => {
+    // Prefer majors from course assignments if available
+    if (Array.isArray(room.courses) && room.courses.length > 0) {
+      const majors = new Set<string>();
+      for (const course of room.courses) {
+        const major = course.majorFocus?.trim();
+        if (major) majors.add(major);
+      }
+      if (majors.size > 0) {
+        return Array.from(majors);
+      }
+    }
+
+    // Then use any provided focusAreas
     if (Array.isArray(room.focusAreas) && room.focusAreas.length) {
       return room.focusAreas;
     }
 
-    return room.resources
-      .map((resource) => {
-        if (typeof resource !== 'string') {
-          return null;
-        }
-
-        const match = resource.match(/^\s*Major:\s*(.+)$/i);
-        return match ? match[1].trim() : null;
-      })
-      .filter((value): value is string => Boolean(value));
+    // Do not infer majors from resources anymore
+    return [];
   }, []);
 
+  // Filter classrooms to only show those with teaching assignments matching student's major
+  // Only classrooms assigned by IT admin with teachers matching the student's major are shown
   const { prioritizedClassrooms, majorMatchIds, hasMajorSpecificClassrooms } = useMemo(() => {
     if (!normalizedMajor) {
       return {
-        prioritizedClassrooms: classroomList,
+        prioritizedClassrooms: [],
         majorMatchIds: new Set<number>(),
         hasMajorSpecificClassrooms: false
       };
     }
 
-    const decorated = classroomList.map((room) => {
-      const focusAreas = deriveFocusAreas(room);
-      const matches = focusAreas.some((area) => area.toLowerCase() === normalizedMajor);
-
-      return { room, matches };
+    // Filter to only show classrooms with courses matching the student's major
+    const filtered = classroomList.filter((room) => {
+      if (!room.courses || room.courses.length === 0) {
+        return false; // Only show classrooms with teaching assignments
+      }
+      return room.courses.some((course) => {
+        const courseMajor = normalizeMajorName(course.majorFocus) || '';
+        return courseMajor === normalizedMajor || 
+               courseMajor.includes(normalizedMajor) || 
+               normalizedMajor.includes(courseMajor);
+      });
     });
 
-    decorated.sort((a, b) => Number(b.matches) - Number(a.matches));
-
-    const matchIds = new Set(decorated.filter((entry) => entry.matches).map((entry) => entry.room.id));
+    const matchIds = new Set(filtered.map((room) => room.id));
 
     return {
-      prioritizedClassrooms: decorated.map((entry) => entry.room),
+      prioritizedClassrooms: filtered,
       majorMatchIds: matchIds,
       hasMajorSpecificClassrooms: matchIds.size > 0
     };
-  }, [classroomList, normalizedMajor, deriveFocusAreas]);
+  }, [classroomList, normalizedMajor]);
 
   if (!classroomList.length) {
     return (
@@ -183,11 +214,11 @@ export default function ClassroomSelfRegistrationCard({
             </Typography>
           </Stack>
           <Typography variant="body2" color="text.secondary">
-            Browse spaces curated by the IT team and reserve a seat for project work, study groups, or club meetups.
+            Browse spaces with teaching assignments matching your major and reserve a seat for your classes.
           </Typography>
           {studentMajor && hasMajorSpecificClassrooms && (
             <Chip
-              label={`Showing classes for ${studentMajor}`}
+              label={`Showing classrooms with ${studentMajor} teaching assignments`}
               size="small"
               color="primary"
               variant="outlined"
@@ -196,8 +227,7 @@ export default function ClassroomSelfRegistrationCard({
           )}
           {studentMajor && !hasMajorSpecificClassrooms && (
             <Alert severity="info" variant="outlined">
-              We don’t have a dedicated classroom for the {studentMajor} major yet. Showing all available collaborative spaces
-              so you can still reserve a seat.
+              No classrooms have been assigned with teachers for the {studentMajor} major yet. Please contact IT admin to set up teaching assignments.
             </Alert>
           )}
         </Stack>
@@ -214,10 +244,21 @@ export default function ClassroomSelfRegistrationCard({
             const isLoading = state?.status === 'loading';
             const buttonDisabled = isRegistered || classroom.isFull || isLoading;
             const focusAreas = deriveFocusAreas(classroom);
+            // Filter out "Major:" resources since buildings are not restricted by major
             const nonMajorResources = classroom.resources.filter((resource) => !/^\s*Major:/i.test(resource));
             const displayedResources = nonMajorResources.slice(0, 4);
             const extraResources = Math.max(nonMajorResources.length - displayedResources.length, 0);
-            const isRecommended = majorMatchIds.has(classroom.id);
+            
+            // Show only courses matching student's major (from teaching assignments)
+            const filteredCourses = studentMajor && classroom.courses
+              ? classroom.courses.filter((course) => {
+                  const courseMajor = normalizeMajorName(course.majorFocus) || '';
+                  const normalizedStudentMajor = normalizeMajorName(studentMajor) || '';
+                  return courseMajor === normalizedStudentMajor || 
+                         courseMajor.includes(normalizedStudentMajor) || 
+                         normalizedStudentMajor.includes(courseMajor);
+                })
+              : classroom.courses || [];
 
             return (
               <Paper
@@ -258,13 +299,55 @@ export default function ClassroomSelfRegistrationCard({
                       ))}
                     </Stack>
                   )}
-                  {isRecommended && (
-                    <Chip
-                      label="Recommended for your major"
-                      size="small"
-                      color="secondary"
-                      variant="outlined"
-                    />
+                  
+                  {filteredCourses && Array.isArray(filteredCourses) && filteredCourses.length > 0 && (
+                    <Stack spacing={1.5} sx={{ pt: 1 }}>
+                      <Divider sx={{ borderStyle: 'dashed' }} />
+                      <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        Courses in this classroom
+                      </Typography>
+                      <Stack spacing={1}>
+                        {filteredCourses.map((course, idx) => (
+                          <Paper 
+                            key={idx} 
+                            variant="outlined" 
+                            sx={{ 
+                              p: 1.5, 
+                              backgroundColor: 'rgba(99, 102, 241, 0.04)',
+                              borderColor: 'rgba(99, 102, 241, 0.2)'
+                            }}
+                          >
+                            <Stack spacing={0.5}>
+                              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                                <Typography variant="body2" fontWeight={600} color="primary.main">
+                                  {course.courseTitle || 'Untitled Course'}
+                                </Typography>
+                                {course.courseCode && (
+                                  <Chip 
+                                    label={course.courseCode} 
+                                    size="small" 
+                                    variant="outlined"
+                                    sx={{ height: 20, fontSize: '0.7rem' }}
+                                  />
+                                )}
+                              </Stack>
+                              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                                {course.weekday && (
+                                  <Typography variant="caption" color="text.secondary">
+                                    📅 {course.weekday}
+                                  </Typography>
+                                )}
+                                {course.startTime && course.endTime && (
+                                  <Typography variant="caption" color="text.secondary">
+                                    ⏰ {course.startTime}–{course.endTime}
+                                  </Typography>
+                                )}
+                              </Stack>
+                            </Stack>
+                          </Paper>
+                        ))}
+                      </Stack>
+                    </Stack>
                   )}
 
                   <Stack spacing={1.5}>

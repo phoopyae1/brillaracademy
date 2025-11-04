@@ -15,8 +15,14 @@ router.get('/', requireStaff(['IT_ADMIN']), async (_req, res) => {
   res.json({ classrooms });
 });
 
-router.get('/public/available', async (_req, res) => {
-  const classrooms = await listClassroomsWithAvailability();
+router.get('/public/available', async (req, res) => {
+  const studentId = req.query.studentId ? Number(req.query.studentId) : undefined;
+  
+  if (studentId !== undefined && !Number.isFinite(studentId)) {
+    return res.status(400).json({ error: 'Invalid student ID.' });
+  }
+  
+  const classrooms = await listClassroomsWithAvailability(studentId);
   res.json({ classrooms });
 });
 

@@ -35,6 +35,7 @@ function normalizeAssignment(row: any): TeachingAssignment {
     endTime: row.end_time,
     studentGroup: row.student_group,
     majorFocus: row.major_focus ?? row.majorFocus ?? 'Undeclared',
+    semester: row.semester ?? '1/2026',
     assignedBy: row.assigned_by ?? null,
     assignedAt: row.assigned_at instanceof Date ? row.assigned_at.toISOString() : row.assigned_at
   };
@@ -60,7 +61,7 @@ export async function listTeachingAssignments(): Promise<TeachingAssignment[]> {
 
   try {
     const { rows } = await pool.query(
-      `SELECT id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, assigned_by, assigned_at
+      `SELECT id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, semester, assigned_by, assigned_at
        FROM teaching_assignments
        ORDER BY assigned_at DESC`
     );
@@ -81,12 +82,16 @@ export async function listTeachingAssignmentsForTeacher(teacherId: number): Prom
   const pool = getPool();
 
   if (!pool) {
-    return inMemoryAssignments.filter((assignment) => assignment.teacherId === teacherId);
+    const assignments = inMemoryAssignments.filter((assignment) => assignment.teacherId === teacherId);
+    if (assignments.length === 0) {
+      console.warn(`No assignments found for teacher ID ${teacherId}. Available teacher IDs: ${[...new Set(inMemoryAssignments.map(a => a.teacherId))].join(', ')}`);
+    }
+    return assignments;
   }
 
   try {
     const { rows } = await pool.query(
-      `SELECT id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, assigned_by, assigned_at
+      `SELECT id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, semester, assigned_by, assigned_at
        FROM teaching_assignments
        WHERE teacher_id = $1
        ORDER BY start_time ASC`,
@@ -115,13 +120,187 @@ export type CreateTeachingAssignmentInput = {
   endTime: string;
   studentGroup?: string;
   majorFocus: string;
+  semester?: string;
 };
+
+// Helper function to enroll students in an assignment
+async function enrollStudentsInAssignment(
+  assignment: TeachingAssignment,
+  input: CreateTeachingAssignmentInput,
+  pool: any,
+  assignedBy?: number
+): Promise<void> {
+  const allStudents = await listStudents();
+  console.log(`[enrollStudentsInAssignment] Checking ${allStudents.length} total students for major "${assignment.majorFocus}"`);
+  console.log(`[enrollStudentsInAssignment] Student majors found: ${allStudents.map(s => `${s.firstName} ${s.lastName} (ID: ${s.id}): "${s.primaryInterest}"`).join(', ')}`);
+  
+  // Case-insensitive and trimmed major matching
+  const normalizedMajorFocus = assignment.majorFocus?.trim().toLowerCase() ?? '';
+  const relevantStudents = allStudents.filter((student) => {
+    const studentMajor = student.primaryInterest?.trim().toLowerCase() ?? '';
+    const matches = studentMajor === normalizedMajorFocus;
+    if (studentMajor && matches) {
+      console.log(`[enrollStudentsInAssignment] ✓ Matched: ${student.firstName} ${student.lastName} (ID: ${student.id}) - "${student.primaryInterest}" matches "${assignment.majorFocus}"`);
+    }
+    return matches;
+  });
+
+  if (relevantStudents.length === 0) {
+    const availableMajors = [...new Set(allStudents.map(s => s.primaryInterest).filter(Boolean))];
+    console.warn(
+      `[enrollStudentsInAssignment] ⚠ No students found with major "${assignment.majorFocus}" for assignment "${input.courseTitle}". ` +
+      `Available student majors: ${availableMajors.join(', ')}`
+    );
+    return;
+  }
+
+  console.log(`[enrollStudentsInAssignment] ✓ Found ${relevantStudents.length} student(s) with major "${assignment.majorFocus}" to enroll in ${input.courseTitle}: ${relevantStudents.map(s => `${s.firstName} ${s.lastName}`).join(', ')}`);
+
+  for (const student of relevantStudents) {
+    // Check if already enrolled
+    const existingRoster = await pool.query(
+      `SELECT id FROM teacher_rosters WHERE teacher_id = $1 AND course_code = $2 AND student_id = $3`,
+      [input.teacherId, input.courseCode, student.id]
+    );
+
+    if (existingRoster.rows.length === 0) {
+      // Add to teacher roster
+      await pool.query(
+        `INSERT INTO teacher_rosters (teacher_id, course_code, course_title, student_id, status)
+         VALUES ($1, $2, $3, $4, 'enrolled')`,
+        [input.teacherId, input.courseCode, input.courseTitle, student.id]
+      );
+
+      // Get course metadata for fees and credits
+      const { getCourseMetadata } = await import('../utils/majors.js');
+      const metadata = getCourseMetadata(input.courseTitle);
+      
+      // Get instructor from teacher record
+      const teacher = await findStaffById(input.teacherId);
+      const instructor = metadata?.instructor ?? teacher?.displayName ?? 'TBA';
+      const credits = metadata?.credits ?? 3; // Default to 3 credits if metadata not found
+
+      // Create class registration (even if metadata is missing)
+      const existingReg = await pool.query(
+        `SELECT id FROM class_registrations WHERE student_id = $1 AND class_name = $2`,
+        [student.id, input.courseTitle]
+      );
+      
+      if (existingReg.rows.length === 0) {
+        await pool.query(
+          `INSERT INTO class_registrations (student_id, class_name, instructor, status, semester, credits, confirmed_by, registered_at)
+           VALUES ($1, $2, $3, 'registered', $4, $5, $6, NOW())`,
+          [student.id, input.courseTitle, instructor, input.semester ?? '1/2026', credits, assignedBy ?? null]
+        );
+        console.log(`✓ Auto-enrolled student ${student.id} (${student.firstName} ${student.lastName}) in ${input.courseTitle}`);
+      } else {
+        console.log(`Student ${student.id} already registered for ${input.courseTitle}, skipping`);
+      }
+
+      // Create timetable entry
+      const existingTimetable = await pool.query(
+        `SELECT id FROM timetables WHERE student_id = $1 AND subject = $2 AND weekday = $3`,
+        [student.id, input.courseTitle, input.weekday]
+      );
+      
+      if (existingTimetable.rows.length === 0) {
+        await pool.query(
+          `INSERT INTO timetables (student_id, weekday, start_time, end_time, subject, location)
+           VALUES ($1, $2, $3, $4, $5, 
+             (SELECT location FROM classrooms WHERE id = $6))`,
+          [student.id, input.weekday, input.startTime, input.endTime, input.courseTitle, input.classroomId]
+        );
+      }
+
+      // Create fee payment (only if metadata exists to get accurate credit amount)
+      if (metadata) {
+        const existingFee = await pool.query(
+          `SELECT id FROM fee_payments WHERE student_id = $1 AND description = $2`,
+          [student.id, `${input.courseTitle} - Registration Fee`]
+        );
+        
+        if (existingFee.rows.length === 0) {
+          const feeAmount = metadata.credits * 4000; // 4000 Baht per credit
+          await pool.query(
+            `INSERT INTO fee_payments (student_id, amount, description, status, due_date)
+             VALUES ($1, $2, $3, 'pending', NOW() + INTERVAL '30 days')`,
+            [student.id, feeAmount, `${input.courseTitle} - Registration Fee`]
+          );
+        }
+      }
+    } else {
+      console.log(`Student ${student.id} (${student.firstName} ${student.lastName}) already in roster for ${input.courseTitle}`);
+    }
+  }
+}
+
+async function validateClassroomMajorMatch(
+  classroomId: number,
+  majorFocus: string,
+  pool: any
+): Promise<boolean> {
+  if (!pool) {
+    return true; // Skip validation in in-memory mode
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT resources FROM classrooms WHERE id = $1`,
+      [classroomId]
+    );
+
+    if (rows.length === 0) {
+      console.warn(`[TeachingService] Classroom ${classroomId} not found`);
+      return false;
+    }
+
+    const resources = Array.isArray(rows[0].resources) ? rows[0].resources : [];
+    const normalizedMajor = majorFocus.trim().toLowerCase();
+
+    // Check if any resource contains "Major: [Major Name]" matching the assignment's major
+    const hasMatchingMajor = resources.some((resource: any) => {
+      if (typeof resource !== 'string') return false;
+      const match = resource.match(/^\s*Major:\s*(.+)$/i);
+      if (match) {
+        return match[1].trim().toLowerCase() === normalizedMajor;
+      }
+      return false;
+    });
+
+    if (!hasMatchingMajor) {
+      console.warn(
+        `[TeachingService] ⚠️ Classroom ${classroomId} does not support major "${majorFocus}". ` +
+        `Available majors in classroom resources: ${resources
+          .filter((r: any) => typeof r === 'string' && /Major:/i.test(r))
+          .map((r: string) => r.replace(/^\s*Major:\s*/i, ''))
+          .join(', ') || 'none'}`
+      );
+    }
+
+    return hasMatchingMajor;
+  } catch (error) {
+    console.error(`[TeachingService] Error validating classroom major match:`, error);
+    return false;
+  }
+}
 
 export async function assignTeacherToClassroom(
   input: CreateTeachingAssignmentInput,
   assignedBy?: number
 ): Promise<TeachingAssignment> {
   const pool = getPool();
+
+  // Validate that classroom matches the major focus
+  if (input.majorFocus && input.classroomId) {
+    const isValid = await validateClassroomMajorMatch(input.classroomId, input.majorFocus, pool);
+    if (!isValid) {
+      throw new Error(
+        `Cannot assign ${input.majorFocus} class to this classroom. ` +
+        `The classroom must support "${input.majorFocus}" major in its resources. ` +
+        `Please select a classroom that has "Major: ${input.majorFocus}" in its resources.`
+      );
+    }
+  }
   const studentGroup = input.studentGroup ?? 'Core Cohort';
   registerSubjectForMajor(input.majorFocus, input.courseTitle);
   const assignedAt = new Date().toISOString();
@@ -138,6 +317,7 @@ export async function assignTeacherToClassroom(
       endTime: input.endTime,
       studentGroup,
       majorFocus: input.majorFocus,
+      semester: input.semester ?? '1/2026',
       assignedBy: assignedBy ?? null,
       assignedAt
     };
@@ -147,10 +327,43 @@ export async function assignTeacherToClassroom(
   }
 
   try {
+    // Check for time conflicts with existing assignments in the same classroom
+    const conflictCheck = await pool.query(
+      `SELECT id, course_code, course_title, weekday, start_time, end_time, major_focus, semester
+       FROM teaching_assignments
+       WHERE classroom_id = $1 AND weekday = $2`,
+      [input.classroomId, input.weekday]
+    );
+
+    // Helper function to convert time string to minutes for comparison
+    const timeToMinutes = (timeStr: string): number => {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      return hours * 60 + minutes;
+    };
+
+    const newStart = timeToMinutes(input.startTime);
+    const newEnd = timeToMinutes(input.endTime);
+
+    for (const existing of conflictCheck.rows) {
+      const existingStart = timeToMinutes(existing.start_time);
+      const existingEnd = timeToMinutes(existing.end_time);
+
+      // Check if times overlap (new start < existing end AND new end > existing start)
+      if (newStart < existingEnd && newEnd > existingStart) {
+        throw new Error(
+          `Classroom is already booked for ${existing.course_title} (${existing.course_code}) ` +
+          `on ${input.weekday} from ${existing.start_time} to ${existing.end_time}. ` +
+          `Your requested time (${input.startTime} to ${input.endTime}) conflicts with this booking.`
+        );
+      }
+    }
+
+    // Do not mutate classroom resources with major tags; majors are tracked on assignments
+
     const { rows } = await pool.query(
-      `INSERT INTO teaching_assignments (teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, assigned_by, assigned_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       RETURNING id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, assigned_by, assigned_at`,
+      `INSERT INTO teaching_assignments (teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, semester, assigned_by, assigned_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       RETURNING id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, semester, assigned_by, assigned_at`,
       [
         input.teacherId,
         input.classroomId,
@@ -161,6 +374,7 @@ export async function assignTeacherToClassroom(
         input.endTime,
         studentGroup,
         input.majorFocus,
+        input.semester ?? '1/2026',
         assignedBy ?? null,
         assignedAt
       ]
@@ -170,24 +384,7 @@ export async function assignTeacherToClassroom(
 
     // Auto-enroll students with matching majors
     try {
-      const allStudents = await listStudents();
-      const relevantStudents = allStudents.filter((student) => student.primaryInterest === assignment.majorFocus);
-
-      for (const student of relevantStudents) {
-        // Check if already enrolled
-        const existingRoster = await pool.query(
-          `SELECT id FROM teacher_rosters WHERE teacher_id = $1 AND course_code = $2 AND student_id = $3`,
-          [input.teacherId, input.courseCode, student.id]
-        );
-
-        if (existingRoster.rows.length === 0) {
-          await pool.query(
-            `INSERT INTO teacher_rosters (teacher_id, course_code, course_title, student_id, status)
-             VALUES ($1, $2, $3, $4, 'enrolled')`,
-            [input.teacherId, input.courseCode, input.courseTitle, student.id]
-          );
-        }
-      }
+      await enrollStudentsInAssignment(assignment, input, pool, assignedBy);
     } catch (enrollmentError) {
       console.error('Failed to auto-enroll students for teaching assignment', enrollmentError);
       // Don't fail the whole operation if enrollment fails
@@ -207,12 +404,155 @@ export async function assignTeacherToClassroom(
       endTime: input.endTime,
       studentGroup,
       majorFocus: input.majorFocus,
+      semester: input.semester ?? '1/2026',
       assignedBy: assignedBy ?? null,
       assignedAt
     };
 
     inMemoryAssignments = [assignment, ...inMemoryAssignments];
     return assignment;
+  }
+}
+
+// Function to re-sync enrollments for an existing assignment
+export async function syncEnrollmentsForAssignment(assignmentId: number): Promise<{ enrolled: number; skipped: number; details: string[] }> {
+  const pool = getPool();
+  
+  if (!pool) {
+    return { enrolled: 0, skipped: 0, details: ['In-memory mode: Enrollment sync not available'] };
+  }
+
+  try {
+    // Get the assignment
+    const { rows } = await pool.query(
+      `SELECT id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, semester
+       FROM teaching_assignments
+       WHERE id = $1`,
+      [assignmentId]
+    );
+
+    if (rows.length === 0) {
+      throw new Error(`Assignment with ID ${assignmentId} not found`);
+    }
+
+    const assignment = normalizeAssignment(rows[0]);
+    
+    const input: CreateTeachingAssignmentInput = {
+      teacherId: assignment.teacherId,
+      classroomId: assignment.classroomId,
+      courseCode: assignment.courseCode,
+      courseTitle: assignment.courseTitle,
+      weekday: assignment.weekday,
+      startTime: assignment.startTime,
+      endTime: assignment.endTime,
+      studentGroup: assignment.studentGroup,
+      majorFocus: assignment.majorFocus,
+      semester: assignment.semester
+    };
+
+    let enrolled = 0;
+    let skipped = 0;
+    const details: string[] = [];
+
+    const allStudents = await listStudents();
+    details.push(`Checking ${allStudents.length} total students for major "${assignment.majorFocus}"`);
+    
+    console.log(`[syncEnrollments] Checking ${allStudents.length} total students for assignment ${assignmentId} (major: "${assignment.majorFocus}")`);
+    console.log(`[syncEnrollments] Student majors found: ${allStudents.map(s => `${s.firstName} ${s.lastName} (ID: ${s.id}): "${s.primaryInterest}"`).join(', ')}`);
+    
+    const normalizedMajorFocus = assignment.majorFocus?.trim().toLowerCase() ?? '';
+    const relevantStudents = allStudents.filter((student) => {
+      const studentMajor = student.primaryInterest?.trim().toLowerCase() ?? '';
+      const matches = studentMajor === normalizedMajorFocus;
+      if (studentMajor && matches) {
+        console.log(`[syncEnrollments] ✓ Matched: ${student.firstName} ${student.lastName} (ID: ${student.id}) - "${student.primaryInterest}" matches "${assignment.majorFocus}"`);
+        details.push(`✓ Found: ${student.firstName} ${student.lastName} (ID: ${student.id}) - Major: "${student.primaryInterest}"`);
+      } else if (studentMajor) {
+        details.push(`✗ Not matched: ${student.firstName} ${student.lastName} (ID: ${student.id}) - Major: "${student.primaryInterest}" (expected: "${assignment.majorFocus}")`);
+      }
+      return matches;
+    });
+
+    if (relevantStudents.length === 0) {
+      const availableMajors = [...new Set(allStudents.map(s => s.primaryInterest).filter(Boolean))];
+      const warningMsg = `⚠ No students found with major "${assignment.majorFocus}". Available majors: ${availableMajors.join(', ') || 'none'}`;
+      console.warn(`[syncEnrollments] ${warningMsg}`);
+      details.push(warningMsg);
+      if (allStudents.length > 0) {
+        details.push(`All students in database: ${allStudents.map(s => `${s.firstName} ${s.lastName} (${s.primaryInterest || 'no major'})`).join(', ')}`);
+      }
+    } else {
+      const foundMsg = `✓ Found ${relevantStudents.length} student(s): ${relevantStudents.map(s => `${s.firstName} ${s.lastName}`).join(', ')}`;
+      console.log(`[syncEnrollments] ${foundMsg}`);
+      details.push(foundMsg);
+    }
+
+    for (const student of relevantStudents) {
+      const existingRoster = await pool.query(
+        `SELECT id FROM teacher_rosters WHERE teacher_id = $1 AND course_code = $2 AND student_id = $3`,
+        [assignment.teacherId, assignment.courseCode, student.id]
+      );
+
+      if (existingRoster.rows.length === 0) {
+        // Add to teacher roster
+        await pool.query(
+          `INSERT INTO teacher_rosters (teacher_id, course_code, course_title, student_id, status)
+           VALUES ($1, $2, $3, $4, 'enrolled')`,
+          [assignment.teacherId, assignment.courseCode, assignment.courseTitle, student.id]
+        );
+
+        // Get course metadata
+        const { getCourseMetadata } = await import('../utils/majors.js');
+        const metadata = getCourseMetadata(assignment.courseTitle);
+        const teacher = await findStaffById(assignment.teacherId);
+        const instructor = metadata?.instructor ?? teacher?.displayName ?? 'TBA';
+        const credits = metadata?.credits ?? 3;
+
+        // Create class registration
+        const existingReg = await pool.query(
+          `SELECT id FROM class_registrations WHERE student_id = $1 AND class_name = $2`,
+          [student.id, assignment.courseTitle]
+        );
+        
+        if (existingReg.rows.length === 0) {
+          await pool.query(
+            `INSERT INTO class_registrations (student_id, class_name, instructor, status, semester, credits, confirmed_by, registered_at)
+             VALUES ($1, $2, $3, 'registered', $4, $5, NULL, NOW())`,
+            [student.id, assignment.courseTitle, instructor, assignment.semester ?? '1/2026', credits]
+          );
+          enrolled++;
+          const enrollMsg = `✓ Enrolled student ${student.id} (${student.firstName} ${student.lastName}) in ${assignment.courseTitle}`;
+          console.log(enrollMsg);
+          details.push(enrollMsg);
+        } else {
+          skipped++;
+          details.push(`⊘ Student ${student.id} (${student.firstName} ${student.lastName}) already registered for ${assignment.courseTitle}`);
+        }
+
+        // Create timetable entry
+        const existingTimetable = await pool.query(
+          `SELECT id FROM timetables WHERE student_id = $1 AND subject = $2 AND weekday = $3`,
+          [student.id, assignment.courseTitle, assignment.weekday]
+        );
+        
+        if (existingTimetable.rows.length === 0) {
+          await pool.query(
+            `INSERT INTO timetables (student_id, weekday, start_time, end_time, subject, location)
+             VALUES ($1, $2, $3, $4, $5, 
+               (SELECT location FROM classrooms WHERE id = $6))`,
+            [student.id, assignment.weekday, assignment.startTime, assignment.endTime, assignment.courseTitle, assignment.classroomId]
+          );
+        }
+      } else {
+        skipped++;
+      }
+    }
+
+    details.push(`\nSummary: ${enrolled} enrolled, ${skipped} skipped`);
+    return { enrolled, skipped, details };
+  } catch (error) {
+    console.error('Failed to sync enrollments for assignment', error);
+    throw error;
   }
 }
 

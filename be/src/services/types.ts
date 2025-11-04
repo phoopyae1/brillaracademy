@@ -102,10 +102,20 @@ export type ClassroomEnrollment = {
   registeredAt: string;
 };
 
+export type ClassroomCourse = {
+  courseCode: string;
+  courseTitle: string;
+  weekday: string;
+  startTime: string;
+  endTime: string;
+  majorFocus: string;
+};
+
 export type ClassroomAvailability = Classroom & {
   seatsFilled: number;
   seatsAvailable: number;
   isFull: boolean;
+  courses?: ClassroomCourse[];
 };
 
 export type FeePayment = {
@@ -174,6 +184,7 @@ export type TeachingAssignment = {
   endTime: string;
   studentGroup: string;
   majorFocus: string;
+  semester: string;
   assignedBy: number | null;
   assignedAt: string;
 };

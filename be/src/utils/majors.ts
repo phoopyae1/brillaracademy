@@ -18,7 +18,8 @@ const MAJOR_SUBJECTS: Record<Major, string[]> = {
     'Neural Interface Design',
     'Biomechatronics Studio',
     'Biomedical Signal Processing',
-    'Global Health Innovation Lab'
+    'Global Health Innovation Lab',
+    'Intro to Biomedical Engineering'
   ],
   'Data Science': [
     'Responsible AI Systems',
@@ -146,6 +147,7 @@ export type CourseMetadata = {
 };
 
 const COURSE_METADATA: Record<string, CourseMetadata> = {
+  'Intro to Biomedical Engineering': { instructor: 'Dr. Priya Raman', credits: 3 },
   'Neural Interface Design': { instructor: 'Dr. Priya Raman', credits: 3 },
   'Biomechatronics Studio': { instructor: 'Dr. Leila Morgan', credits: 4 },
   'Biomedical Signal Processing': { instructor: 'Dr. Priya Raman', credits: 3 },

@@ -80,8 +80,6 @@ export default async function StudentPortalPage() {
     );
   }
 
-  const availableClassrooms = await listAvailableClassrooms();
-
   const {
     student,
     timetable,
@@ -94,6 +92,8 @@ export default async function StudentPortalPage() {
     fees,
     classroomEnrollments
   } = dashboard;
+
+  const availableClassrooms = await listAvailableClassrooms(student.id);
 
   const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const sortedTimetable = [...timetable].sort((a, b) => {

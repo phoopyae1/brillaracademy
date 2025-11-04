@@ -24,7 +24,7 @@ import {
 } from './academicService.js';
 import { listStudentFeePayments, recordFeePayment } from './financeService.js';
 import { listClassroomEnrollmentsForStudent } from './classroomService.js';
-import { getCourseMetadata } from '../utils/majors.js';
+import { getCourseMetadata, getSubjectsForMajor } from '../utils/majors.js';
 
 type StudentSubjectSelection = {
   studentId: number;
@@ -242,7 +242,7 @@ async function createCourseDataForStudent(studentId: number, subjects: string[],
         );
 
         // Create fee
-        const feeAmount = metadata.credits * 350; // $350 per credit
+        const feeAmount = metadata.credits * 4000; // 4000 Baht per credit
         await pool.query(
           `INSERT INTO fee_payments (student_id, amount, description, status, due_date)
            VALUES ($1, $2, $3, $4, NOW() + INTERVAL '30 days')`,
@@ -257,7 +257,7 @@ async function createCourseDataForStudent(studentId: number, subjects: string[],
       inMemoryTimetables = [...inMemoryTimetables, timetableEntry];
       
       // Add fee payment
-      const feeAmount = metadata.credits * 350;
+      const feeAmount = metadata.credits * 4000; // 4000 Baht per credit
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + 30);
       
@@ -388,6 +388,52 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       .filter((exam) => new Date(exam.examDate).getTime() >= Date.now())
       .sort((a, b) => new Date(a.examDate).getTime() - new Date(b.examDate).getTime());
 
+    // Filter registration windows courses by student's major (fallback/in-memory mode)
+    const studentMajor = student.primaryInterest;
+    let filteredRegistrationWindows = registrationWindows;
+
+    if (studentMajor) {
+      try {
+        // Get teaching assignments from in-memory or import
+        const { listTeachingAssignments } = await import('./teachingService.js');
+        const assignments = await listTeachingAssignments();
+
+        const courseToMajorMap = new Map<string, string>();
+        for (const assignment of assignments) {
+          const courseKey = `${assignment.courseCode}|${assignment.courseTitle}`;
+          if (!courseToMajorMap.has(courseKey)) {
+            courseToMajorMap.set(courseKey, assignment.majorFocus);
+          }
+        }
+
+        // Filter courses in registration windows
+        filteredRegistrationWindows = registrationWindows.map((window) => {
+          const filteredCourses = window.courses.filter((course) => {
+            const courseKey = `${course.courseCode}|${course.courseTitle}`;
+            const courseMajor = courseToMajorMap.get(courseKey);
+            
+            if (courseMajor) {
+              return courseMajor.trim().toLowerCase() === studentMajor.trim().toLowerCase();
+            }
+            
+            // Fallback: check if course title contains major-related keywords
+            const majorSubjects = getSubjectsForMajor(studentMajor);
+            return majorSubjects.some(subject => 
+              course.courseTitle.toLowerCase().includes(subject.toLowerCase()) ||
+              course.courseCode.toLowerCase().includes(studentMajor.toLowerCase().substring(0, 4))
+            );
+          });
+
+          return {
+            ...window,
+            courses: filteredCourses
+          };
+        });
+      } catch (error) {
+        console.error('Failed to filter registration windows by major (fallback)', error);
+      }
+    }
+
     return {
       student: applySubjectSelection(student),
       timetable: inMemoryTimetables.filter((entry) => entry.studentId === studentId),
@@ -397,7 +443,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       grades,
       upcomingExams,
       gpaBySemester,
-      registrationWindows,
+      registrationWindows: filteredRegistrationWindows,
       fees
     };
   }
@@ -451,6 +497,111 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       .filter((exam) => new Date(exam.examDate).getTime() >= Date.now())
       .sort((a, b) => new Date(a.examDate).getTime() - new Date(b.examDate).getTime());
 
+    // Ensure tuition fee exists based on class registrations
+    // Calculate total credits from class registrations
+    const totalCredits = registrationsResult.rows.reduce((sum, reg) => sum + (reg.credits ?? 0), 0);
+    let updatedFees = fees;
+    
+    if (totalCredits > 0 && pool) {
+      try {
+        // Check if tuition fee exists
+        const existingTuitionFee = await pool.query(
+          `SELECT id, amount FROM fee_payments WHERE student_id = $1 AND description = $2`,
+          [studentId, 'Tuition Fee - Fall 2024']
+        );
+
+        const tuitionFeeAmount = totalCredits * 4000;
+
+        if (existingTuitionFee.rows.length === 0) {
+          // Create tuition fee if it doesn't exist - should be paid when student has registered
+          const dueDate = new Date();
+          dueDate.setDate(dueDate.getDate() + 30);
+          
+          await pool.query(
+            `INSERT INTO fee_payments (student_id, amount, description, status, received_at, due_date)
+             VALUES ($1, $2, $3, 'paid', NOW(), $4)`,
+            [studentId, tuitionFeeAmount, 'Tuition Fee - Fall 2024', 'paid', dueDate.toISOString()]
+          );
+          console.log(`[StudentService] Created missing tuition fee (paid) for student ${studentId}: ${tuitionFeeAmount} Baht (${totalCredits} credits × 4000)`);
+          
+          // Re-fetch fees to include the newly created tuition fee
+          updatedFees = await listStudentFeePayments(studentId);
+        } else {
+          // Update tuition fee if amount is incorrect
+          const existingAmount = Number(existingTuitionFee.rows[0].amount);
+          if (existingAmount !== tuitionFeeAmount) {
+            await pool.query(
+              `UPDATE fee_payments SET amount = $1, status = 'paid', received_at = COALESCE(received_at, NOW()) WHERE id = $2`,
+              [tuitionFeeAmount, existingTuitionFee.rows[0].id]
+            );
+            console.log(`[StudentService] Updated tuition fee for student ${studentId} from ${existingAmount} to ${tuitionFeeAmount} Baht (marked as paid)`);
+            
+            // Re-fetch fees to include the updated tuition fee
+            updatedFees = await listStudentFeePayments(studentId);
+          } else {
+            // If amount matches but status is pending, mark as paid (student has registered)
+            await pool.query(
+              `UPDATE fee_payments SET status = 'paid', received_at = COALESCE(received_at, NOW()) WHERE id = $1 AND status = 'pending'`,
+              [existingTuitionFee.rows[0].id]
+            );
+          }
+        }
+      } catch (error) {
+        console.error('Failed to ensure tuition fee exists', error);
+      }
+    }
+
+    // Filter registration windows courses by student's major
+    const studentMajor = student.primaryInterest;
+    let filteredRegistrationWindows = registrationWindows;
+
+    if (studentMajor && pool) {
+      try {
+        // Get all teaching assignments to map courses to majors
+        const assignmentsResult = await pool.query(
+          `SELECT DISTINCT course_code, course_title, major_focus
+           FROM teaching_assignments`
+        );
+
+        const courseToMajorMap = new Map<string, string>();
+        for (const row of assignmentsResult.rows) {
+          const courseKey = `${row.course_code}|${row.course_title}`;
+          if (!courseToMajorMap.has(courseKey)) {
+            courseToMajorMap.set(courseKey, row.major_focus);
+          }
+        }
+
+        // Filter courses in registration windows
+        filteredRegistrationWindows = registrationWindows.map((window) => {
+          const filteredCourses = window.courses.filter((course) => {
+            const courseKey = `${course.courseCode}|${course.courseTitle}`;
+            const courseMajor = courseToMajorMap.get(courseKey);
+            
+            // If course is found in teaching assignments, filter by major
+            // Otherwise, also check if course title matches the student's major subjects
+            if (courseMajor) {
+              return courseMajor.trim().toLowerCase() === studentMajor.trim().toLowerCase();
+            }
+            
+            // Fallback: check if course title contains major-related keywords
+            const majorSubjects = getSubjectsForMajor(studentMajor);
+            return majorSubjects.some(subject => 
+              course.courseTitle.toLowerCase().includes(subject.toLowerCase()) ||
+              course.courseCode.toLowerCase().includes(studentMajor.toLowerCase().substring(0, 4))
+            );
+          });
+
+          return {
+            ...window,
+            courses: filteredCourses
+          };
+        });
+      } catch (error) {
+        console.error('Failed to filter registration windows by major', error);
+        // Fall back to unfiltered windows if error occurs
+      }
+    }
+
     return {
       student,
       timetable: timetableResult.rows,
@@ -460,8 +611,8 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       grades,
       upcomingExams,
       gpaBySemester,
-      registrationWindows,
-      fees
+      registrationWindows: filteredRegistrationWindows,
+      fees: updatedFees
     };
   } catch (error) {
     console.error('Failed to fetch student dashboard', error);

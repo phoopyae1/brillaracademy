@@ -77,9 +77,24 @@ SET student_id = EXCLUDED.student_id,
 
 INSERT INTO classrooms (id, name, location, capacity, resources, created_by, created_at)
 VALUES
-    (1, 'Innovation Hub 201', 'North Campus - Building B', 28, '["Interactive Whiteboard", "3D Printer", "Video Conferencing"]', 1, '2024-08-05T09:00:00Z'),
-    (2, 'Wellness Studio 3A', 'South Campus - Health Center', 22, '["Yoga Mats", "Projection System"]', 1, '2024-08-06T11:30:00Z'),
-    (3, 'Analytics Lab 410', 'Main Campus - Tech Tower', 32, '["High-Performance Workstations", "Data Wall"]', 1, '2024-08-07T14:15:00Z')
+    (1, 'Building 1, 1001', 'Building 1 - First Floor', 28, '["Interactive Whiteboard", "3D Printer", "Video Conferencing", "Major: Biomedical Engineering", "Major: Artificial Intelligence"]', 1, '2024-08-05T09:00:00Z'),
+    (2, 'Building 1, 1002', 'Building 1 - First Floor', 22, '["Yoga Mats", "Projection System", "Major: Environmental Science", "Major: International Relations", "Major: Hospitality Management"]', 1, '2024-08-06T11:30:00Z'),
+    (3, 'Building 1, 1003', 'Building 1 - First Floor', 32, '["High-Performance Workstations", "Data Wall", "Major: Data Science", "Major: Cybersecurity", "Major: Digital Media Design", "Major: Business Administration"]', 1, '2024-08-07T14:15:00Z'),
+    (4, 'Building 1 - Room 101', 'Building 1 - First Floor', 25, '["Whiteboard", "Projector", "Major: Business Administration", "Major: International Relations"]', 1, '2024-08-08T09:00:00Z'),
+    (5, 'Building 1 - Room 102', 'Building 1 - First Floor', 30, '["Interactive Display", "Audio System", "Major: Digital Media Design", "Major: Information Technology"]', 1, '2024-08-08T09:00:00Z'),
+    (6, 'Building 1 - Room 201', 'Building 1 - Second Floor', 28, '["Smart Board", "Video Equipment", "Major: International Relations", "Major: Hospitality Management"]', 1, '2024-08-08T10:00:00Z'),
+    (7, 'Building 1 - Room 202', 'Building 1 - Second Floor', 32, '["Whiteboard", "Projector", "Major: Business Administration", "Major: Digital Media Design"]', 1, '2024-08-08T10:00:00Z'),
+    (8, 'Building 2 - Room 101', 'Building 2 - First Floor', 24, '["Lab Equipment", "Safety Stations", "Major: Biomedical Engineering", "Major: Environmental Science"]', 1, '2024-08-08T11:00:00Z'),
+    (9, 'Building 2 - Room 102', 'Building 2 - First Floor', 26, '["Microscopes", "Lab Benches", "Major: Biomedical Engineering", "Major: Environmental Science"]', 1, '2024-08-08T11:00:00Z'),
+    (10, 'Building 2 - Room 201', 'Building 2 - Second Floor', 30, '["Computer Workstations", "Printer Station", "Major: Data Science", "Major: Information Technology"]', 1, '2024-08-08T12:00:00Z'),
+    (11, 'Building 2 - Room 202', 'Building 2 - Second Floor', 28, '["Programming Lab Setup", "Network Equipment", "Major: Cybersecurity", "Major: Information Technology"]', 1, '2024-08-08T12:00:00Z'),
+    (12, 'Building 3 - Room 101', 'Building 3 - First Floor', 22, '["Seminar Tables", "Presentation Screen", "Major: International Relations", "Major: Business Administration"]', 1, '2024-08-08T13:00:00Z'),
+    (13, 'Building 3 - Room 102', 'Building 3 - First Floor', 20, '["Round Tables", "Whiteboard Walls", "Major: International Relations", "Major: Hospitality Management"]', 1, '2024-08-08T13:00:00Z'),
+    (14, 'Building 3 - Room 201', 'Building 3 - Second Floor', 25, '["Design Tables", "Drawing Boards", "Major: Digital Media Design", "Major: Business Administration"]', 1, '2024-08-08T14:00:00Z'),
+    (15, 'Building 3 - Room 202', 'Building 3 - Second Floor', 24, '["Art Supplies", "Digital Tablets", "Major: Digital Media Design"]', 1, '2024-08-08T14:00:00Z'),
+    (16, 'Building 4 - Room 101', 'Building 4 - First Floor', 35, '["Lecture Hall Setup", "Stage", "Major: Business Administration", "Major: International Relations"]', 1, '2024-08-08T15:00:00Z'),
+    (17, 'Building 4 - Room 102', 'Building 4 - First Floor', 32, '["Tiered Seating", "Audio-Visual System", "Major: International Relations", "Major: Business Administration"]', 1, '2024-08-08T15:00:00Z'),
+ 
 ON CONFLICT (id) DO UPDATE
 SET name = EXCLUDED.name,
     location = EXCLUDED.location,
@@ -166,8 +181,8 @@ SET student_id = EXCLUDED.student_id,
 
 INSERT INTO registration_windows (id, semester, status, opens_at, closes_at, courses)
 VALUES
-    (1, 'Fall 2024', 'open', '2024-08-10T12:00:00Z', '2024-09-10T23:59:59Z', '[{"courseCode":"BIOE-630","courseTitle":"Neural Interface Design","instructor":"Dr. Priya Raman","credits":3},{"courseCode":"DATA-720","courseTitle":"Responsible AI Systems","instructor":"Professor Malik Chen","credits":4}]'),
-    (2, 'Spring 2025', 'upcoming', '2024-11-15T12:00:00Z', '2025-01-10T23:59:59Z', '[{"courseCode":"BIOE-650","courseTitle":"Biomechatronics Studio","instructor":"Dr. Leila Morgan","credits":4},{"courseCode":"DATA-755","courseTitle":"Immersive Analytics Workshop","instructor":"Professor Aaron Patel","credits":3}]')
+    (1, '1/2026', 'open', '2025-12-10T12:00:00Z', '2026-01-10T23:59:59Z', '[{"courseCode":"BIOE-630","courseTitle":"Neural Interface Design","instructor":"Dr. Priya Raman","credits":3},{"courseCode":"DATA-720","courseTitle":"Responsible AI Systems","instructor":"Professor Malik Chen","credits":4}]'),
+    (2, '2/2026', 'upcoming', '2026-04-15T12:00:00Z', '2026-05-10T23:59:59Z', '[{"courseCode":"BIOE-650","courseTitle":"Biomechatronics Studio","instructor":"Dr. Leila Morgan","credits":4},{"courseCode":"DATA-755","courseTitle":"Immersive Analytics Workshop","instructor":"Professor Aaron Patel","credits":3}]')
 ON CONFLICT (id) DO UPDATE
 SET semester = EXCLUDED.semester,
     status = EXCLUDED.status,
@@ -175,11 +190,19 @@ SET semester = EXCLUDED.semester,
     closes_at = EXCLUDED.closes_at,
     courses = EXCLUDED.courses;
 
-INSERT INTO teaching_assignments (id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, assigned_by, assigned_at)
+INSERT INTO system_settings (key, value, updated_by, updated_at)
 VALUES
-    (1, 2, 1, 'BIOE-521', 'Advanced Bioinstrumentation', 'Monday', '09:00', '10:15', 'Biomedical Cohort A', 'Biomedical Engineering', 1, '2024-08-08T14:00:00Z'),
-    (2, 2, 3, 'DATA-610', 'Bayesian Machine Learning', 'Wednesday', '13:00', '14:15', 'Data Science Scholars', 'Data Science', 1, '2024-08-08T14:30:00Z'),
-    (3, 2, 2, 'CHEM-540', 'Organic Synthesis Lab', 'Thursday', '14:30', '16:00', 'Advanced Chem Labs', 'Environmental Science', 1, '2024-08-08T15:00:00Z')
+    ('current_semester', '1/2026', 1, NOW())
+ON CONFLICT (key) DO UPDATE
+SET value = EXCLUDED.value,
+    updated_by = EXCLUDED.updated_by,
+    updated_at = EXCLUDED.updated_at;
+
+INSERT INTO teaching_assignments (id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, semester, assigned_by, assigned_at)
+VALUES
+    (1, 2, 1, 'BIOE-521', 'Advanced Bioinstrumentation', 'Monday', '09:00', '10:15', 'Biomedical Cohort A', 'Biomedical Engineering', '1/2026', 1, '2024-08-08T14:00:00Z'),
+    (2, 2, 3, 'DATA-610', 'Bayesian Machine Learning', 'Wednesday', '13:00', '14:15', 'Data Science Scholars', 'Data Science', '1/2026', 1, '2024-08-08T14:30:00Z'),
+    (3, 2, 2, 'CHEM-540', 'Organic Synthesis Lab', 'Thursday', '14:30', '16:00', 'Advanced Chem Labs', 'Environmental Science', '1/2026', 1, '2024-08-08T15:00:00Z')
 ON CONFLICT (id) DO UPDATE
 SET teacher_id = EXCLUDED.teacher_id,
     classroom_id = EXCLUDED.classroom_id,
@@ -190,6 +213,7 @@ SET teacher_id = EXCLUDED.teacher_id,
     end_time = EXCLUDED.end_time,
     student_group = EXCLUDED.student_group,
     major_focus = EXCLUDED.major_focus,
+    semester = EXCLUDED.semester,
     assigned_by = EXCLUDED.assigned_by,
     assigned_at = EXCLUDED.assigned_at;
 

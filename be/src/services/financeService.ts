@@ -80,6 +80,21 @@ export async function recordFeePayment(
   const dueDate = input.dueDate ?? null;
 
   if (!pool) {
+    // In-memory mode: try to update existing fee if amount matches, otherwise create new
+    const existingFee = inMemoryFeePayments.find(
+      (fee) => fee.studentId === input.studentId && 
+                fee.status === 'pending' && 
+                Math.abs(fee.amount - input.amount) < 0.01
+    );
+    
+    if (existingFee) {
+      // Update existing fee status to paid
+      existingFee.status = paymentStatus;
+      existingFee.receivedBy = receivedBy ?? null;
+      existingFee.receivedAt = new Date().toISOString();
+      return existingFee;
+    }
+
     const payment: FeePayment = {
       id: nextFeePaymentId++,
       studentId: input.studentId,
@@ -96,6 +111,62 @@ export async function recordFeePayment(
   }
 
   try {
+    // Try to find and update existing pending fee
+    // Priority: match by description (if provided) + studentId + amount, then fallback to just amount
+    let existingFee;
+    
+    if (description) {
+      // First try exact match by description + studentId + amount (most specific)
+      existingFee = await pool.query(
+        `SELECT id, amount FROM fee_payments 
+         WHERE student_id = $1 AND status = 'pending' 
+         AND description = $2
+         AND ABS(amount - $3) < 0.01
+         ORDER BY id DESC
+         LIMIT 1`,
+        [input.studentId, description, input.amount]
+      );
+      
+      // If no exact match, try partial description match (for cases where description includes multiple fees)
+      if (existingFee.rows.length === 0) {
+        existingFee = await pool.query(
+          `SELECT id, amount, description FROM fee_payments 
+           WHERE student_id = $1 AND status = 'pending' 
+           AND ABS(amount - $2) < 0.01
+           AND (description ILIKE $3 OR $3 ILIKE '%' || description || '%')
+           ORDER BY id DESC
+           LIMIT 1`,
+          [input.studentId, input.amount, `%${description}%`]
+        );
+      }
+    }
+    
+    // If no match by description, try matching by amount only (for backwards compatibility)
+    if (!existingFee || existingFee.rows.length === 0) {
+      existingFee = await pool.query(
+        `SELECT id, amount FROM fee_payments 
+         WHERE student_id = $1 AND status = 'pending' 
+         AND ABS(amount - $2) < 0.01
+         ORDER BY id DESC
+         LIMIT 1`,
+        [input.studentId, input.amount]
+      );
+    }
+
+    if (existingFee.rows.length > 0) {
+      // Update existing fee to paid
+      const { rows } = await pool.query(
+        `UPDATE fee_payments 
+         SET status = $1, received_by = $2, received_at = NOW()
+         WHERE id = $3
+         RETURNING id, student_id, amount, description, status, received_by, received_at, due_date`,
+        [paymentStatus, receivedBy ?? null, existingFee.rows[0].id]
+      );
+
+      return normalizeFeePayment(rows[0]);
+    }
+
+    // No matching fee found, create new payment entry
     const { rows } = await pool.query(
       `INSERT INTO fee_payments (student_id, amount, description, status, received_by, due_date)
        VALUES ($1, $2, $3, $4, $5, $6)
