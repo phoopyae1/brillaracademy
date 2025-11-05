@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { cookies } from 'next/headers';
+import Image from 'next/image';
 import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
 import Container from '@mui/material/Container';
@@ -49,19 +50,35 @@ export default function PortalChrome({ children }: PortalChromeProps) {
       <AppBar position="sticky" color="inherit" elevation={1} sx={{ backgroundColor: 'rgba(255,255,255,0.95)' }}>
         <Container maxWidth="lg">
           <Toolbar disableGutters sx={{ gap: { xs: 1.5, md: 3 }, py: 1.5 }}>
-            <Typography
+            <Box
               component={Link}
               href="/"
-              variant="h6"
               sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1.5,
                 textDecoration: 'none',
-                fontWeight: 800,
-                color: 'primary.main',
-                letterSpacing: 0.5
+                '&:hover': { opacity: 0.8 }
               }}
             >
-              Brillar Academy Portal
-            </Typography>
+              <Image
+                src="/assets/brillar-logo.png"
+                alt="Brillar Academy Logo"
+                width={40}
+                height={40}
+                style={{ objectFit: 'contain' }}
+              />
+              <Typography
+                variant="h6"
+                sx={{
+                  fontWeight: 800,
+                  color: 'primary.main',
+                  letterSpacing: 0.5
+                }}
+              >
+                Brillar Academy Portal
+              </Typography>
+            </Box>
             <Stack direction="row" spacing={1.5} sx={{ ml: 'auto' }} alignItems="center">
               {navLinks.map((item) => (
                 <Button

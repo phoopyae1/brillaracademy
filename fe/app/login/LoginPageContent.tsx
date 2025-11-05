@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useFormik } from 'formik';
 import * as yup from 'yup';
+import Image from 'next/image';
 import Container from '@mui/material/Container';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
@@ -142,6 +143,15 @@ export default function LoginPageContent() {
         >
           <Stack spacing={3}>
             <Box textAlign="center">
+              <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
+                <Image
+                  src="/assets/brillar-logo.png"
+                  alt="Brillar Academy Logo"
+                  width={120}
+                  height={120}
+                  style={{ objectFit: 'contain' }}
+                />
+              </Box>
               <Typography variant="h4" fontWeight={700} gutterBottom>
                 Welcome back 👋
               </Typography>

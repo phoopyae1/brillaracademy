@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from 'react';
+import Image from 'next/image';
 import Avatar from '@mui/material/Avatar';
 import Badge from '@mui/material/Badge';
 import Box from '@mui/material/Box';
@@ -153,9 +154,18 @@ export default function StudentDashboard({
             >
               <Stack spacing={4}>
                 <Stack spacing={1.5}>
-                  <Typography variant="body2" sx={{ color: 'primary.main', fontWeight: 600 }}>
-                    Brillar Academy
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+                    <Image
+                      src="/assets/brillar-logo.png"
+                      alt="Brillar Academy Logo"
+                      width={32}
+                      height={32}
+                      style={{ objectFit: 'contain' }}
+                    />
+                    <Typography variant="body2" sx={{ color: 'primary.main', fontWeight: 600 }}>
+                      Brillar Academy
+                    </Typography>
+                  </Box>
                   <Typography variant="h5" fontWeight={700}>
                     Student Portal
                   </Typography>
