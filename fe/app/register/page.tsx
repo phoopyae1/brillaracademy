@@ -9,6 +9,8 @@ import Chip from '@mui/material/Chip';
 import StudentSelfRegistrationForm from '@/components/student/StudentSelfRegistrationForm';
 import { fetchMajorSubjectCatalog } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 export const metadata = {
   title: 'Student Self-Registration | Brillar Academy',
   description:
