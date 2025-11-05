@@ -10,6 +10,8 @@ import financeRoutes from './routes/financeRoutes.js';
 import examRoutes from './routes/examRoutes.js';
 import teachingRoutes from './routes/teachingRoutes.js';
 import systemRoutes from './routes/systemRoutes.js';
+import announcementRoutes from './routes/announcementRoutes.js';
+import assignmentRoutes from './routes/assignmentRoutes.js';
 
 export function createApp() {
   const app = express();
@@ -31,6 +33,8 @@ export function createApp() {
   app.use('/api/exams', examRoutes);
   app.use('/api/teaching', teachingRoutes);
   app.use('/api/system', systemRoutes);
+  app.use('/api/announcements', announcementRoutes);
+  app.use('/api/assignments', assignmentRoutes);
 
   return app;
 }

@@ -38,7 +38,10 @@ import {
   fetchMajorSubjectCatalog,
   getCurrentSemester,
   updateCurrentSemester,
-  syncAssignmentEnrollments,
+  listAnnouncements,
+  createAnnouncement,
+  deleteAnnouncement,
+  createAssignment,
   type StaffAccount,
   type TeacherDashboard,
   type TeachingAssignment,
@@ -48,7 +51,8 @@ import {
   type GradeRecord,
   type TeacherRosterStudent,
   type TeacherScheduleSlot,
-  type MajorSubjectCatalogEntry
+  type MajorSubjectCatalogEntry,
+  type Announcement
 } from '@/lib/db';
 
 type StaffSession = { token: string; staff: StaffAccount };
@@ -73,7 +77,7 @@ function formatTimestamp(value?: string) {
 }
 
 function formatCurrency(value: number) {
-  return new Intl.NumberFormat('th-TH', { style: 'currency', currency: 'THB' }).format(value);
+  return new Intl.NumberFormat('en-SG', { style: 'currency', currency: 'SGD' }).format(value);
 }
 
 type LoginState = { status: 'idle' | 'submitting' | 'error'; message: string };
@@ -113,7 +117,11 @@ type PaymentFormState = {
   message: string;
 };
 
-export default function ForgePortalPage() {
+type ForgePortalPageProps = {
+  staffId?: number;
+};
+
+export default function ForgePortalPage({ staffId }: ForgePortalPageProps = {}) {
   const [session, setSession] = useState<StaffSession | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -125,6 +133,7 @@ export default function ForgePortalPage() {
   const [majorCatalog, setMajorCatalog] = useState<MajorSubjectCatalogEntry[]>([]);
   const [payments, setPayments] = useState<FeePayment[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -166,11 +175,12 @@ export default function ForgePortalPage() {
             setTeacherDashboard(dashboard);
           }
         } else if (session.staff.role === 'IT_ADMIN') {
-          const [assignmentList, classroomList, staffList, majors] = await Promise.all([
+          const [assignmentList, classroomList, staffList, majors, announcementsList] = await Promise.all([
             listTeachingAssignments(session.token),
             listClassrooms(session.token),
             listStaff(session.token),
-            fetchMajorSubjectCatalog()
+            fetchMajorSubjectCatalog(),
+            listAnnouncements()
           ]);
 
           if (!cancelled) {
@@ -178,16 +188,19 @@ export default function ForgePortalPage() {
             setClassrooms(classroomList);
             setTeachers(staffList.filter((member) => member.role === 'TEACHER'));
             setMajorCatalog(majors);
+            setAnnouncements(announcementsList);
           }
         } else if (session.staff.role === 'STUDENT_ADMIN') {
-          const [paymentList, studentList] = await Promise.all([
+          const [paymentList, studentList, announcementsList] = await Promise.all([
             listFeePayments(session.token),
-            listStudents(session.token)
+            listStudents(session.token),
+            listAnnouncements()
           ]);
 
           if (!cancelled) {
             setPayments(paymentList);
             setStudents(studentList);
+            setAnnouncements(announcementsList);
           }
         }
       } catch (error) {
@@ -423,7 +436,7 @@ export default function ForgePortalPage() {
           )}
 
           {session?.staff.role === 'TEACHER' && (
-            <TeacherWorkspace dashboard={teacherDashboard} loading={loading} onRecordGrade={handleRecordGrade} />
+            <TeacherWorkspace dashboard={teacherDashboard} loading={loading} onRecordGrade={handleRecordGrade} session={session} />
           )}
 
           {session?.staff.role === 'IT_ADMIN' && (
@@ -435,6 +448,18 @@ export default function ForgePortalPage() {
               majors={majorCatalog}
               onCreateAssignment={handleCreateAssignment}
               session={session}
+              announcements={announcements}
+              onCreateAnnouncement={async (input) => {
+                if (!session) throw new Error('Not authenticated');
+                const announcement = await createAnnouncement(session.token, input);
+                setAnnouncements((prev) => [announcement, ...prev]);
+                return announcement;
+              }}
+              onDeleteAnnouncement={async (id) => {
+                if (!session) throw new Error('Not authenticated');
+                await deleteAnnouncement(session.token, id);
+                setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+              }}
             />
           )}
 
@@ -443,7 +468,19 @@ export default function ForgePortalPage() {
               loading={loading}
               payments={payments}
               students={students}
+              announcements={announcements}
               onRecordPayment={handleRecordPayment}
+              onCreateAnnouncement={async (input) => {
+                if (!session) throw new Error('Not authenticated');
+                const announcement = await createAnnouncement(session.token, input);
+                setAnnouncements((prev) => [announcement, ...prev]);
+                return announcement;
+              }}
+              onDeleteAnnouncement={async (id) => {
+                if (!session) throw new Error('Not authenticated');
+                await deleteAnnouncement(session.token, id);
+                setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+              }}
             />
           )}
         </Stack>
@@ -463,9 +500,21 @@ type TeacherWorkspaceProps = {
     grade: string;
     credits: number;
   }) => Promise<GradeRecord>;
+  session: StaffSession;
 };
 
-function TeacherWorkspace({ dashboard, loading, onRecordGrade }: TeacherWorkspaceProps) {
+type StudentAssignmentFormState = {
+  courseCode: string;
+  title: string;
+  description: string;
+  dueDate: string;
+  maxPoints: string;
+  assignmentType: 'homework' | 'project' | 'quiz' | 'exam' | 'other';
+  status: AsyncState;
+  message: string;
+};
+
+function TeacherWorkspace({ dashboard, loading, onRecordGrade, session }: TeacherWorkspaceProps) {
   const [formState, setFormState] = useState<GradeFormState>({
     studentId: '',
     courseCode: '',
@@ -502,6 +551,23 @@ function TeacherWorkspace({ dashboard, loading, onRecordGrade }: TeacherWorkspac
   }, [dashboard]);
 
   const gradeHistory = dashboard?.recentGrades ?? [];
+
+  const [assignmentFormState, setAssignmentFormState] = useState<StudentAssignmentFormState>({
+    courseCode: '',
+    title: '',
+    description: '',
+    dueDate: '',
+    maxPoints: '',
+    assignmentType: 'homework',
+    status: 'idle',
+    message: ''
+  });
+
+  useEffect(() => {
+    if (dashboard?.schedule.length && !assignmentFormState.courseCode) {
+      setAssignmentFormState((prev) => ({ ...prev, courseCode: dashboard.schedule[0].courseCode }));
+    }
+  }, [dashboard, assignmentFormState.courseCode]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -540,6 +606,49 @@ function TeacherWorkspace({ dashboard, loading, onRecordGrade }: TeacherWorkspac
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to record grade.';
       setFormState((prev) => ({ ...prev, status: 'error', message }));
+    }
+  };
+
+  const handleAssignmentSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!assignmentFormState.courseCode || !assignmentFormState.title || !assignmentFormState.dueDate) {
+      setAssignmentFormState((prev) => ({ ...prev, status: 'error', message: 'Please fill in course, title, and due date.' }));
+      return;
+    }
+
+    setAssignmentFormState((prev) => ({ ...prev, status: 'submitting', message: 'Creating assignment…' }));
+
+    try {
+      const course = courseOptions.find((c) => c.courseCode === assignmentFormState.courseCode);
+      if (!course) {
+        throw new Error('Course not found');
+      }
+
+      await createAssignment(session.token, {
+        teacherId: dashboard?.teacher.id ?? 0,
+        courseCode: assignmentFormState.courseCode,
+        courseTitle: course.courseTitle,
+        title: assignmentFormState.title,
+        description: assignmentFormState.description || null,
+        dueDate: assignmentFormState.dueDate,
+        maxPoints: assignmentFormState.maxPoints ? Number(assignmentFormState.maxPoints) : null,
+        assignmentType: assignmentFormState.assignmentType
+      });
+
+      setAssignmentFormState({
+        courseCode: assignmentFormState.courseCode,
+        title: '',
+        description: '',
+        dueDate: '',
+        maxPoints: '',
+        assignmentType: 'homework',
+        status: 'success',
+        message: `Assignment "${assignmentFormState.title}" created successfully!`
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to create assignment.';
+      setAssignmentFormState((prev) => ({ ...prev, status: 'error', message }));
     }
   };
 
@@ -746,6 +855,117 @@ function TeacherWorkspace({ dashboard, loading, onRecordGrade }: TeacherWorkspac
       </Grid>
 
       <Paper elevation={0} sx={{  border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+        <Stack spacing={2.5}>
+          <Box>
+            <Typography variant="h6" fontWeight={700}>
+              Create Assignment
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Create homework, projects, quizzes, or exams for your students.
+            </Typography>
+          </Box>
+
+          {assignmentFormState.status === 'error' && <Alert severity="error">{assignmentFormState.message}</Alert>}
+          {assignmentFormState.status === 'success' && <Alert severity="success">{assignmentFormState.message}</Alert>}
+
+          <Stack component="form" spacing={2.5} onSubmit={handleAssignmentSubmit} noValidate>
+            <FormControl fullWidth required>
+              <InputLabel id="assignment-course-select-label">Course</InputLabel>
+              <Select
+                labelId="assignment-course-select-label"
+                label="Course"
+                value={assignmentFormState.courseCode}
+                onChange={(event) =>
+                  setAssignmentFormState((prev) => ({
+                    ...prev,
+                    courseCode: event.target.value
+                  }))
+                }
+              >
+                {courseOptions.map((course) => (
+                  <MenuItem key={course.courseCode} value={course.courseCode}>
+                    {course.courseCode} · {course.courseTitle}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <TextField
+              label="Assignment Title"
+              value={assignmentFormState.title}
+              onChange={(event) => setAssignmentFormState((prev) => ({ ...prev, title: event.target.value }))}
+              required
+              fullWidth
+            />
+
+            <TextField
+              label="Description"
+              value={assignmentFormState.description}
+              onChange={(event) => setAssignmentFormState((prev) => ({ ...prev, description: event.target.value }))}
+              multiline
+              rows={3}
+              fullWidth
+            />
+
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  label="Due Date"
+                  type="datetime-local"
+                  value={assignmentFormState.dueDate}
+                  onChange={(event) => setAssignmentFormState((prev) => ({ ...prev, dueDate: event.target.value }))}
+                  required
+                  fullWidth
+                  InputLabelProps={{ shrink: true }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel id="assignment-type-select-label">Type</InputLabel>
+                  <Select
+                    labelId="assignment-type-select-label"
+                    label="Type"
+                    value={assignmentFormState.assignmentType}
+                    onChange={(event) =>
+                      setAssignmentFormState((prev) => ({
+                        ...prev,
+                        assignmentType: event.target.value as 'homework' | 'project' | 'quiz' | 'exam' | 'other'
+                      }))
+                    }
+                  >
+                    <MenuItem value="homework">Homework</MenuItem>
+                    <MenuItem value="project">Project</MenuItem>
+                    <MenuItem value="quiz">Quiz</MenuItem>
+                    <MenuItem value="exam">Exam</MenuItem>
+                    <MenuItem value="other">Other</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+
+            <TextField
+              label="Max Points (optional)"
+              type="number"
+              value={assignmentFormState.maxPoints}
+              onChange={(event) => setAssignmentFormState((prev) => ({ ...prev, maxPoints: event.target.value }))}
+              fullWidth
+              inputProps={{ min: 0, step: 0.1 }}
+            />
+
+            <Button
+              type="submit"
+              variant="contained"
+              size="large"
+              disabled={assignmentFormState.status === 'submitting'}
+              startIcon={assignmentFormState.status === 'submitting' ? <CircularProgress size={20} color="inherit" /> : undefined}
+            >
+              {assignmentFormState.status === 'submitting' ? 'Creating…' : 'Create Assignment'}
+            </Button>
+          </Stack>
+        </Stack>
+      </Paper>
+
+      <Paper elevation={0} sx={{  border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
         <Stack spacing={2}>
           <Box>
             <Typography variant="h6" fontWeight={700}>
@@ -811,9 +1031,17 @@ type ItAdminWorkspaceProps = {
     input: Omit<AssignmentFormState, 'status' | 'message'>
   ) => Promise<TeachingAssignment>;
   session: StaffSession;
+  announcements: Announcement[];
+  onCreateAnnouncement: (input: {
+    title: string;
+    content: string;
+    type: 'announcement' | 'event';
+    eventDate?: string | null;
+  }) => Promise<Announcement>;
+  onDeleteAnnouncement: (id: number) => Promise<void>;
 };
 
-function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, onCreateAssignment, session }: ItAdminWorkspaceProps) {
+function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, onCreateAssignment, session, announcements, onCreateAnnouncement, onDeleteAnnouncement }: ItAdminWorkspaceProps) {
   const [formState, setFormState] = useState<AssignmentFormState>({
     teacherId: '',
     classroomId: '',
@@ -832,7 +1060,6 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
   const [semesterLoading, setSemesterLoading] = useState(false);
   const [semesterError, setSemesterError] = useState('');
   const [semesterUpdateStatus, setSemesterUpdateStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
-  const [syncingAssignments, setSyncingAssignments] = useState<Set<number>>(new Set());
 
   // Load current semester on mount
   useEffect(() => {
@@ -983,30 +1210,6 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
     }
   };
 
-  const handleSyncEnrollments = async (assignmentId: number) => {
-    setSyncingAssignments((prev) => new Set(prev).add(assignmentId));
-    try {
-      const result = await syncAssignmentEnrollments(session.token, assignmentId);
-      let message = `Enrollment sync completed!\n\nEnrolled: ${result.enrolled} student(s)\nSkipped: ${result.skipped} student(s)`;
-      
-      // Show detailed information if available
-      if (result.details && result.details.length > 0) {
-        message += '\n\nDetails:\n' + result.details.join('\n');
-      }
-      
-      alert(message);
-      // Refresh assignments to show updated enrollments
-      window.location.reload();
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Failed to sync enrollments');
-    } finally {
-      setSyncingAssignments((prev) => {
-        const next = new Set(prev);
-        next.delete(assignmentId);
-        return next;
-      });
-    }
-  };
 
   const enrichedAssignments = assignments.map((assignment) => ({
     ...assignment,
@@ -1275,7 +1478,6 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
                 <TableCell>Schedule</TableCell>
                 <TableCell>Semester</TableCell>
                 <TableCell>Major</TableCell>
-                <TableCell>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -1312,22 +1514,11 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
                   <TableCell>
                     <Chip label={assignment.majorFocus} size="small" color="info" variant="outlined" />
                   </TableCell>
-                  <TableCell>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      onClick={() => handleSyncEnrollments(assignment.id)}
-                      disabled={syncingAssignments.has(assignment.id)}
-                      startIcon={syncingAssignments.has(assignment.id) ? <CircularProgress size={16} /> : undefined}
-                    >
-                      {syncingAssignments.has(assignment.id) ? 'Syncing...' : 'Sync Enrollments'}
-                    </Button>
-                  </TableCell>
                 </TableRow>
               ))}
               {!enrichedAssignments.length && (
                 <TableRow>
-                  <TableCell colSpan={7} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                  <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                     No classroom assignments have been created yet.
                   </TableCell>
                 </TableRow>
@@ -1399,6 +1590,78 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
           </Table>
         </Stack>
       </Paper>
+
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+        <Stack spacing={3}>
+          <Typography variant="h6" fontWeight={700}>
+            Create Announcement or Event
+          </Typography>
+          <AnnouncementForm onCreate={onCreateAnnouncement} />
+        </Stack>
+      </Paper>
+
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+        <Stack spacing={2}>
+          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
+            <Box>
+              <Typography variant="h6" fontWeight={700}>
+                Announcements & Events
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Manage announcements and events visible to all students.
+              </Typography>
+            </Box>
+            {loading && <CircularProgress size={20} />}
+          </Stack>
+
+          <Stack spacing={2}>
+            {announcements.map((announcement) => (
+              <Paper key={announcement.id} elevation={0} sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
+                <Stack spacing={1}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                    <Box>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Chip
+                          label={announcement.type}
+                          size="small"
+                          color={announcement.type === 'event' ? 'primary' : 'default'}
+                          sx={{ textTransform: 'capitalize' }}
+                        />
+                        <Typography variant="h6" fontWeight={600}>
+                          {announcement.title}
+                        </Typography>
+                      </Stack>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                        Posted by {announcement.postedByName || 'Admin'} on {formatTimestamp(announcement.createdAt)}
+                        {announcement.eventDate && ` • Event Date: ${formatTimestamp(announcement.eventDate)}`}
+                      </Typography>
+                    </Box>
+                    <Button
+                      size="small"
+                      color="error"
+                      onClick={async () => {
+                        if (confirm('Are you sure you want to delete this announcement?')) {
+                          await onDeleteAnnouncement(announcement.id);
+                        }
+                      }}
+                    >
+                      Delete
+                    </Button>
+                  </Stack>
+                  <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
+                    {announcement.content}
+                  </Typography>
+                </Stack>
+              </Paper>
+            ))}
+            {announcements.length === 0 && (
+              <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 4 }}>
+                No announcements yet. Create one above to get started.
+              </Typography>
+            )}
+          </Stack>
+        </Stack>
+      </Paper>
     </Stack>
   );
 }
@@ -1407,12 +1670,28 @@ type StudentAdminWorkspaceProps = {
   loading: boolean;
   payments: FeePayment[];
   students: Student[];
+  announcements: Announcement[];
   onRecordPayment: (
     input: Omit<PaymentFormState, 'status' | 'message'>
   ) => Promise<FeePayment>;
+  onCreateAnnouncement: (input: {
+    title: string;
+    content: string;
+    type: 'announcement' | 'event';
+    eventDate?: string | null;
+  }) => Promise<Announcement>;
+  onDeleteAnnouncement: (id: number) => Promise<void>;
 };
 
-function StudentAdminWorkspace({ loading, payments, students, onRecordPayment }: StudentAdminWorkspaceProps) {
+function StudentAdminWorkspace({ 
+  loading, 
+  payments, 
+  students, 
+  announcements,
+  onRecordPayment,
+  onCreateAnnouncement,
+  onDeleteAnnouncement
+}: StudentAdminWorkspaceProps) {
   const [formState, setFormState] = useState<PaymentFormState>({
     studentId: '',
     amount: '',
@@ -1424,10 +1703,10 @@ function StudentAdminWorkspace({ loading, payments, students, onRecordPayment }:
   });
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Auto-fill amount and description when student is selected (only if fields are empty)
+  // Auto-fill amount and description when student is selected
   // Sum ALL outstanding fees for the student (classroom fees, course fees, etc.)
   useEffect(() => {
-    if (formState.studentId && students.length > 0 && payments.length > 0 && !formState.amount) {
+    if (formState.studentId && students.length > 0 && payments.length > 0) {
       const studentIdNum = Number(formState.studentId);
       if (isNaN(studentIdNum)) return;
 
@@ -1439,7 +1718,7 @@ function StudentAdminWorkspace({ loading, payments, students, onRecordPayment }:
       
       const outstandingFees = studentPayments.reduce((sum, payment) => sum + payment.amount, 0);
 
-      // Auto-fill amount with total of all outstanding fees
+      // Auto-fill amount with total of all outstanding fees whenever student changes
       if (outstandingFees > 0) {
         // Create a description that includes all outstanding fees for better matching
         const feeDescriptions = studentPayments.map(p => p.description || 'Fee').join('; ');
@@ -1452,9 +1731,16 @@ function StudentAdminWorkspace({ loading, payments, students, onRecordPayment }:
           amount: outstandingFees.toFixed(2),
           description: prev.description || description
         }));
+      } else {
+        // If no outstanding fees, clear the amount
+        setFormState((prev) => ({
+          ...prev,
+          amount: '',
+          description: prev.description || ''
+        }));
       }
     }
-  }, [formState.studentId, formState.amount, formState.description, students, payments]);
+  }, [formState.studentId, students, payments]); // Removed formState.amount and formState.description from dependencies
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1579,7 +1865,7 @@ function StudentAdminWorkspace({ loading, payments, students, onRecordPayment }:
                 fullWidth
                 helperText={
                   outstandingFeesBreakdown.total > 0 && formState.studentId
-                    ? `Auto-filled: ${outstandingFeesBreakdown.fees.length} outstanding fee(s) totaling ${outstandingFeesBreakdown.total.toFixed(2)} Baht. Breakdown: ${outstandingFeesBreakdown.fees.map(f => `${f.description || 'Fee'}: ${f.amount.toFixed(2)}`).join(', ')}`
+                    ? `Auto-filled: ${outstandingFeesBreakdown.fees.length} outstanding fee(s) totaling S$${outstandingFeesBreakdown.total.toFixed(2)}. Breakdown: ${outstandingFeesBreakdown.fees.map(f => `${f.description || 'Fee'}: S$${f.amount.toFixed(2)}`).join(', ')}`
                     : 'Enter the payment amount or select a student to auto-fill outstanding fees'
                 }
               />
@@ -1707,6 +1993,194 @@ function StudentAdminWorkspace({ loading, payments, students, onRecordPayment }:
           </Table>
         </Stack>
       </Paper>
+
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+        <Stack spacing={3}>
+          <Typography variant="h6" fontWeight={700}>
+            Create Announcement or Event
+          </Typography>
+          <AnnouncementForm onCreate={onCreateAnnouncement} />
+        </Stack>
+      </Paper>
+
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+        <Stack spacing={2}>
+          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
+            <Box>
+              <Typography variant="h6" fontWeight={700}>
+                Announcements & Events
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Manage announcements and events visible to all students.
+              </Typography>
+            </Box>
+            {loading && <CircularProgress size={20} />}
+          </Stack>
+
+          <Stack spacing={2}>
+            {announcements.map((announcement) => (
+              <Paper key={announcement.id} elevation={0} sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
+                <Stack spacing={1}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                    <Box>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Chip
+                          label={announcement.type}
+                          size="small"
+                          color={announcement.type === 'event' ? 'primary' : 'default'}
+                          sx={{ textTransform: 'capitalize' }}
+                        />
+                        <Typography variant="h6" fontWeight={600}>
+                          {announcement.title}
+                        </Typography>
+                      </Stack>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                        Posted by {announcement.postedByName || 'Admin'} on {formatTimestamp(announcement.createdAt)}
+                        {announcement.eventDate && ` • Event Date: ${formatTimestamp(announcement.eventDate)}`}
+                      </Typography>
+                    </Box>
+                    <Button
+                      size="small"
+                      color="error"
+                      onClick={async () => {
+                        if (confirm('Are you sure you want to delete this announcement?')) {
+                          await onDeleteAnnouncement(announcement.id);
+                        }
+                      }}
+                    >
+                      Delete
+                    </Button>
+                  </Stack>
+                  <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
+                    {announcement.content}
+                  </Typography>
+                </Stack>
+              </Paper>
+            ))}
+            {announcements.length === 0 && (
+              <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 4 }}>
+                No announcements yet. Create one above to get started.
+              </Typography>
+            )}
+          </Stack>
+        </Stack>
+      </Paper>
     </Stack>
+  );
+}
+
+type AnnouncementFormProps = {
+  onCreate: (input: {
+    title: string;
+    content: string;
+    type: 'announcement' | 'event';
+    eventDate?: string | null;
+  }) => Promise<Announcement>;
+};
+
+function AnnouncementForm({ onCreate }: AnnouncementFormProps) {
+  const [formState, setFormState] = useState({
+    title: '',
+    content: '',
+    type: 'announcement' as 'announcement' | 'event',
+    eventDate: '',
+    status: 'idle' as AsyncState,
+    message: ''
+  });
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setFormState((prev) => ({ ...prev, status: 'submitting', message: '' }));
+
+    try {
+      await onCreate({
+        title: formState.title,
+        content: formState.content,
+        type: formState.type,
+        eventDate: formState.type === 'event' && formState.eventDate ? formState.eventDate : null
+      });
+      setFormState({
+        title: '',
+        content: '',
+        type: 'announcement',
+        eventDate: '',
+        status: 'success',
+        message: 'Announcement created successfully!'
+      });
+      setTimeout(() => {
+        setFormState((prev) => ({ ...prev, status: 'idle', message: '' }));
+      }, 3000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to create announcement.';
+      setFormState((prev) => ({ ...prev, status: 'error', message }));
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <Stack spacing={3}>
+        <Grid container spacing={2}>
+          <Grid item xs={12}>
+            <TextField
+              label="Title"
+              value={formState.title}
+              onChange={(e) => setFormState((prev) => ({ ...prev, title: e.target.value }))}
+              required
+              fullWidth
+            />
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <FormControl fullWidth>
+              <InputLabel>Type</InputLabel>
+              <Select
+                value={formState.type}
+                onChange={(e) => setFormState((prev) => ({ ...prev, type: e.target.value as 'announcement' | 'event' }))}
+                label="Type"
+              >
+                <MenuItem value="announcement">Announcement</MenuItem>
+                <MenuItem value="event">Event</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          {formState.type === 'event' && (
+            <Grid item xs={12} md={6}>
+              <TextField
+                label="Event Date & Time"
+                type="datetime-local"
+                value={formState.eventDate}
+                onChange={(e) => setFormState((prev) => ({ ...prev, eventDate: e.target.value }))}
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+          )}
+          <Grid item xs={12}>
+            <TextField
+              label="Content"
+              value={formState.content}
+              onChange={(e) => setFormState((prev) => ({ ...prev, content: e.target.value }))}
+              required
+              fullWidth
+              multiline
+              rows={4}
+            />
+          </Grid>
+        </Grid>
+
+        {formState.message && (
+          <Alert severity={formState.status === 'error' ? 'error' : 'success'}>
+            {formState.message}
+          </Alert>
+        )}
+
+        <Button
+          type="submit"
+          variant="contained"
+          disabled={formState.status === 'submitting' || !formState.title || !formState.content}
+        >
+          {formState.status === 'submitting' ? 'Creating…' : 'Create Announcement'}
+        </Button>
+      </Stack>
+    </form>
   );
 }

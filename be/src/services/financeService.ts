@@ -2,6 +2,59 @@ import { getPool } from '../db/pool.js';
 import { fallbackFeePayments } from './fallbackData.js';
 import type { FeePayment } from './types.js';
 
+/**
+ * Confirms all pending class registrations for a student if all outstanding fees are paid.
+ * This is called automatically when a fee payment is recorded.
+ */
+async function confirmRegistrationsIfAllFeesPaid(
+  studentId: number,
+  confirmedBy?: number
+): Promise<void> {
+  const pool = getPool();
+  
+  if (!pool) {
+    // In-memory mode: skip confirmation
+    return;
+  }
+
+  try {
+    // Check if student has any pending fees
+    const pendingFeesResult = await pool.query(
+      `SELECT COUNT(*) as count
+       FROM fee_payments
+       WHERE student_id = $1 AND status = 'pending'`,
+      [studentId]
+    );
+
+    const pendingCount = Number(pendingFeesResult.rows[0]?.count || 0);
+
+    // If there are still pending fees, don't confirm registrations yet
+    if (pendingCount > 0) {
+      console.log(`[FinanceService] Student ${studentId} still has ${pendingCount} pending fee(s). Not confirming registrations yet.`);
+      return;
+    }
+
+    // All fees are paid - confirm all pending registrations for this student
+    const confirmResult = await pool.query(
+      `UPDATE class_registrations
+       SET confirmed_by = $1
+       WHERE student_id = $2 AND confirmed_by IS NULL
+       RETURNING id, class_name`,
+      [confirmedBy ?? null, studentId]
+    );
+
+    if (confirmResult.rows.length > 0) {
+      const confirmedClasses = confirmResult.rows.map((row: any) => row.class_name).join(', ');
+      console.log(`[FinanceService] ✓ Confirmed ${confirmResult.rows.length} registration(s) for student ${studentId}: ${confirmedClasses}`);
+    } else {
+      console.log(`[FinanceService] Student ${studentId} has no pending registrations to confirm.`);
+    }
+  } catch (error) {
+    // Don't fail the payment if confirmation fails - log and continue
+    console.error(`[FinanceService] Failed to confirm registrations for student ${studentId} after payment:`, error);
+  }
+}
+
 let inMemoryFeePayments = [...fallbackFeePayments];
 let nextFeePaymentId = fallbackFeePayments.length + 1;
 
@@ -92,6 +145,9 @@ export async function recordFeePayment(
       existingFee.status = paymentStatus;
       existingFee.receivedBy = receivedBy ?? null;
       existingFee.receivedAt = new Date().toISOString();
+      
+      // In in-memory mode, we can't confirm registrations (no database access)
+      // This would need to be handled separately if in-memory mode is used
       return existingFee;
     }
 
@@ -107,6 +163,9 @@ export async function recordFeePayment(
     };
 
     inMemoryFeePayments = [payment, ...inMemoryFeePayments];
+    
+    // In in-memory mode, we can't confirm registrations (no database access)
+    // This would need to be handled separately if in-memory mode is used
     return payment;
   }
 
@@ -163,7 +222,14 @@ export async function recordFeePayment(
         [paymentStatus, receivedBy ?? null, existingFee.rows[0].id]
       );
 
-      return normalizeFeePayment(rows[0]);
+      const payment = normalizeFeePayment(rows[0]);
+
+      // If payment status is 'paid', check if all outstanding fees are paid and confirm registrations
+      if (paymentStatus === 'paid') {
+        await confirmRegistrationsIfAllFeesPaid(input.studentId, receivedBy);
+      }
+
+      return payment;
     }
 
     // No matching fee found, create new payment entry
@@ -174,7 +240,14 @@ export async function recordFeePayment(
       [input.studentId, input.amount, description, paymentStatus, receivedBy ?? null, dueDate]
     );
 
-    return normalizeFeePayment(rows[0]);
+    const payment = normalizeFeePayment(rows[0]);
+
+    // If payment status is 'paid', check if all outstanding fees are paid and confirm registrations
+    if (paymentStatus === 'paid') {
+      await confirmRegistrationsIfAllFeesPaid(input.studentId, receivedBy);
+    }
+
+    return payment;
   } catch (error) {
     console.error('Failed to record fee payment', error);
     throw error;

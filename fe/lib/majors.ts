@@ -7,6 +7,7 @@ export const AVAILABLE_MAJORS = [
   'Environmental Science',
   'Hospitality Management',
   'Artificial Intelligence',
+  'Information Technology',
   'Cybersecurity'
 ] as const;
 

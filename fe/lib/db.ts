@@ -66,6 +66,21 @@ export type FeePayment = {
   dueDate: string | null;
 };
 
+export type StudentAssignment = {
+  id: number;
+  teacherId: number;
+  teacherName?: string | null;
+  courseCode: string;
+  courseTitle: string;
+  title: string;
+  description: string | null;
+  dueDate: string;
+  maxPoints: number | null;
+  assignmentType: 'homework' | 'project' | 'quiz' | 'exam' | 'other';
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type StudentDashboardData = {
   student: Student;
   timetable: Array<{
@@ -102,6 +117,7 @@ export type StudentDashboardData = {
   gpaBySemester: SemesterGpa[];
   registrationWindows: SemesterRegistration[];
   fees: FeePayment[];
+  assignments: StudentAssignment[];
 };
 
 export type StaffAccount = {
@@ -130,6 +146,8 @@ export type ClassroomCourse = {
   startTime: string;
   endTime: string;
   majorFocus: string;
+  teacherName?: string | null;
+  isRegistered?: boolean; // True if student is registered for this specific course
 };
 
 export type ClassroomAvailability = Classroom & {
@@ -199,6 +217,17 @@ export type TeachingAssignment = {
   classroomName?: string;
   classroomLocation?: string;
   teacherName?: string;
+};
+
+export type Announcement = {
+  id: number;
+  title: string;
+  content: string;
+  type: 'announcement' | 'event';
+  eventDate?: string | null;
+  postedBy: number | null;
+  createdAt: string;
+  postedByName?: string | null;
 };
 
 const DEFAULT_API_BASE_URL = 'http://localhost:4000/api';
@@ -467,20 +496,6 @@ export async function createTeachingAssignment(
   return data.assignment;
 }
 
-export async function syncAssignmentEnrollments(
-  token: string,
-  assignmentId: number
-): Promise<{ enrolled: number; skipped: number; message: string; details?: string[] }> {
-  const data = await apiRequest<{ enrolled: number; skipped: number; message: string; details?: string[] }>(
-    `/teaching/assignments/${assignmentId}/sync-enrollments`,
-    {
-      method: 'POST',
-      token
-    }
-  );
-
-  return data;
-}
 
 export async function recordTeacherGrade(
   token: string,
@@ -523,12 +538,16 @@ export async function listAvailableClassrooms(studentId?: number): Promise<Class
 export async function registerForClassroom(input: {
   studentId: number;
   classroomId: number;
+  courseCode?: string; // Optional: if provided, register only for this specific course
 }): Promise<ClassroomEnrollment> {
   const data = await apiRequest<{ enrollment: ClassroomEnrollment }>(
     `/classrooms/${input.classroomId}/self-registrations`,
     {
       method: 'POST',
-      body: { studentId: input.studentId }
+      body: { 
+        studentId: input.studentId,
+        courseCode: input.courseCode // Pass course code to register for specific course
+      }
     }
   );
 
@@ -555,4 +574,90 @@ export async function recordFeePayment(
   });
 
   return data.payment;
+}
+
+export async function listAnnouncements(): Promise<Announcement[]> {
+  const data = await apiRequest<{ announcements?: Announcement[] }>('/announcements', {
+    cache: 'no-store'
+  });
+  return data.announcements ?? [];
+}
+
+export async function createAnnouncement(
+  token: string,
+  input: {
+    title: string;
+    content: string;
+    type: 'announcement' | 'event';
+    eventDate?: string | null;
+  }
+): Promise<Announcement> {
+  const data = await apiRequest<{ announcement: Announcement }>('/announcements', {
+    method: 'POST',
+    body: input,
+    token
+  });
+  return data.announcement;
+}
+
+export async function deleteAnnouncement(token: string, id: number): Promise<void> {
+  await apiRequest(`/announcements/${id}`, {
+    method: 'DELETE',
+    token
+  });
+}
+
+export async function listTeacherAssignments(token: string, teacherId: number, courseCode?: string): Promise<StudentAssignment[]> {
+  const query = courseCode ? `?courseCode=${courseCode}` : '';
+  const data = await apiRequest<{ assignments?: StudentAssignment[] }>(`/assignments/teacher/${teacherId}${query}`, {
+    token
+  });
+  return data.assignments ?? [];
+}
+
+export async function createAssignment(
+  token: string,
+  input: {
+    teacherId: number;
+    courseCode: string;
+    courseTitle: string;
+    title: string;
+    description?: string | null;
+    dueDate: string;
+    maxPoints?: number | null;
+    assignmentType?: 'homework' | 'project' | 'quiz' | 'exam' | 'other';
+  }
+): Promise<StudentAssignment> {
+  const data = await apiRequest<{ assignment: StudentAssignment }>('/assignments', {
+    method: 'POST',
+    body: input,
+    token
+  });
+  return data.assignment;
+}
+
+export async function updateAssignment(
+  token: string,
+  id: number,
+  input: {
+    title?: string;
+    description?: string | null;
+    dueDate?: string;
+    maxPoints?: number | null;
+    assignmentType?: 'homework' | 'project' | 'quiz' | 'exam' | 'other';
+  }
+): Promise<StudentAssignment> {
+  const data = await apiRequest<{ assignment: StudentAssignment }>(`/assignments/${id}`, {
+    method: 'PUT',
+    body: input,
+    token
+  });
+  return data.assignment;
+}
+
+export async function deleteAssignment(token: string, id: number): Promise<void> {
+  await apiRequest(`/assignments/${id}`, {
+    method: 'DELETE',
+    token
+  });
 }

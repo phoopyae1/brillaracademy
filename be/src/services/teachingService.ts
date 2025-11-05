@@ -219,14 +219,7 @@ async function enrollStudentsInAssignment(
           [student.id, `${input.courseTitle} - Registration Fee`]
         );
         
-        if (existingFee.rows.length === 0) {
-          const feeAmount = metadata.credits * 4000; // 4000 Baht per credit
-          await pool.query(
-            `INSERT INTO fee_payments (student_id, amount, description, status, due_date)
-             VALUES ($1, $2, $3, 'pending', NOW() + INTERVAL '30 days')`,
-            [student.id, feeAmount, `${input.courseTitle} - Registration Fee`]
-          );
-        }
+        // Course registration fees removed - fees are now handled per semester (semester fee + health insurance)
       }
     } else {
       console.log(`Student ${student.id} (${student.firstName} ${student.lastName}) already in roster for ${input.courseTitle}`);
@@ -423,13 +416,52 @@ export async function syncEnrollmentsForAssignment(assignmentId: number): Promis
   }
 
   try {
-    // Get the assignment
-    const { rows } = await pool.query(
+    // Ensure semester column exists (migration helper)
+    try {
+      await pool.query(`
+        DO $$ 
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_schema = 'public' AND table_name = 'teaching_assignments' AND column_name = 'semester'
+          ) THEN
+            ALTER TABLE teaching_assignments ADD COLUMN semester TEXT DEFAULT '1/2026';
+            UPDATE teaching_assignments SET semester = '1/2026' WHERE semester IS NULL;
+            ALTER TABLE teaching_assignments ALTER COLUMN semester SET NOT NULL;
+            ALTER TABLE teaching_assignments ALTER COLUMN semester SET DEFAULT '1/2026';
+          END IF;
+        END $$;
+      `);
+    } catch (migrationError) {
+      console.warn('[syncEnrollments] Could not ensure semester column exists:', migrationError);
+    }
+
+    // Get the assignment - use COALESCE as fallback if column was just added
+    let rows;
+    try {
+      const result = await pool.query(
       `SELECT id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, semester
        FROM teaching_assignments
        WHERE id = $1`,
       [assignmentId]
     );
+      rows = result.rows;
+    } catch (queryError: any) {
+      // If semester column still doesn't exist, fallback to query without it
+      if (queryError?.code === '42703' && queryError?.message?.includes('semester')) {
+        console.warn('[syncEnrollments] Semester column missing, using default value');
+        const result = await pool.query(
+          `SELECT id, teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus
+           FROM teaching_assignments
+           WHERE id = $1`,
+          [assignmentId]
+        );
+        // Add default semester to each row
+        rows = result.rows.map(row => ({ ...row, semester: '1/2026' }));
+      } else {
+        throw queryError;
+      }
+    }
 
     if (rows.length === 0) {
       throw new Error(`Assignment with ID ${assignmentId} not found`);
@@ -536,11 +568,20 @@ export async function syncEnrollmentsForAssignment(assignmentId: number): Promis
         );
         
         if (existingTimetable.rows.length === 0) {
+          // Get classroom location first
+          const classroomResult = await pool.query(
+            `SELECT location FROM classrooms WHERE id = $1`,
+            [assignment.classroomId]
+          );
+          
+          const classroomLocation = classroomResult.rows.length > 0 
+            ? classroomResult.rows[0].location 
+            : 'TBA';
+          
           await pool.query(
             `INSERT INTO timetables (student_id, weekday, start_time, end_time, subject, location)
-             VALUES ($1, $2, $3, $4, $5, 
-               (SELECT location FROM classrooms WHERE id = $6))`,
-            [student.id, assignment.weekday, assignment.startTime, assignment.endTime, assignment.courseTitle, assignment.classroomId]
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [student.id, assignment.weekday, assignment.startTime, assignment.endTime, assignment.courseTitle, classroomLocation]
           );
         }
       } else {

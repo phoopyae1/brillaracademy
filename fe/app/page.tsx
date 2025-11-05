@@ -30,10 +30,10 @@ export default async function HomePage() {
             </Typography>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent={{ xs: 'center', md: 'flex-start' }}>
               <Button variant="contained" size="large" href="/login">
-                Student login
+                Student & Staff login
               </Button>
-              <Button variant="outlined" size="large" href="/admin/">
-                Admin portal
+              <Button variant="outlined" size="large" href="/admin" sx={{ borderColor: 'primary.main', color: 'primary.main' }}>
+                Admin login
               </Button>
             </Stack>
           </Stack>

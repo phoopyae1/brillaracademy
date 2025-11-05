@@ -24,7 +24,9 @@ import {
 } from './academicService.js';
 import { listStudentFeePayments, recordFeePayment } from './financeService.js';
 import { listClassroomEnrollmentsForStudent } from './classroomService.js';
+import { listStudentAssignments } from './assignmentService.js';
 import { getCourseMetadata, getSubjectsForMajor } from '../utils/majors.js';
+import { getCurrentSemester } from './systemService.js';
 
 type StudentSubjectSelection = {
   studentId: number;
@@ -187,6 +189,9 @@ async function createCourseDataForStudent(studentId: number, subjects: string[],
     'Analytics Lab 410'
   ];
 
+  // Get current semester from system settings
+  const currentSemester = await getCurrentSemester();
+
   for (let i = 0; i < subjects.length; i++) {
     const subject = subjects[i];
     const metadata = getCourseMetadata(subject);
@@ -203,7 +208,7 @@ async function createCourseDataForStudent(studentId: number, subjects: string[],
       instructor: metadata.instructor,
       status: 'registered',
       registeredAt: new Date().toISOString(),
-      semester: 'Fall 2024',
+      semester: currentSemester,
       credits: metadata.credits,
       confirmedBy: null
     };
@@ -231,7 +236,7 @@ async function createCourseDataForStudent(studentId: number, subjects: string[],
            RETURNING id, student_id AS "studentId", class_name AS "className", instructor, status,
                      semester, credits, confirmed_by AS "confirmedBy",
                      to_char(registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "registeredAt"`,
-          [studentId, subject, metadata.instructor, 'registered', 'Fall 2024', metadata.credits, null]
+          [studentId, subject, metadata.instructor, 'registered', currentSemester, metadata.credits, null]
         );
 
         // Insert timetable
@@ -242,7 +247,7 @@ async function createCourseDataForStudent(studentId: number, subjects: string[],
         );
 
         // Create fee
-        const feeAmount = metadata.credits * 4000; // 4000 Baht per credit
+        const feeAmount = metadata.credits * 100; // 100 SGD per credit
         await pool.query(
           `INSERT INTO fee_payments (student_id, amount, description, status, due_date)
            VALUES ($1, $2, $3, $4, NOW() + INTERVAL '30 days')`,
@@ -257,7 +262,7 @@ async function createCourseDataForStudent(studentId: number, subjects: string[],
       inMemoryTimetables = [...inMemoryTimetables, timetableEntry];
       
       // Add fee payment
-      const feeAmount = metadata.credits * 4000; // 4000 Baht per credit
+      const feeAmount = metadata.credits * 100; // 100 SGD per credit
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + 30);
       
@@ -376,14 +381,30 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       return null;
     }
 
-    const [grades, exams, gpaBySemester, registrationWindows, fees, classroomEnrollments] = await Promise.all([
+    console.log(`[StudentService] Fetching dashboard data for student ${studentId}`);
+    const [grades, exams, gpaBySemester, registrationWindows, fees, classroomEnrollments, assignments] = await Promise.all([
       listStudentGrades(studentId),
       listExamAnnouncements(),
       listStudentSemesterGpa(studentId),
       listRegistrationWindows(),
       listStudentFeePayments(studentId),
-      listClassroomEnrollmentsForStudent(studentId)
+      listClassroomEnrollmentsForStudent(studentId),
+      listStudentAssignments(studentId)
     ]);
+    console.log(`[StudentService] Dashboard data fetched for student ${studentId}:`, {
+      gradesCount: grades.length,
+      examsCount: exams.length,
+      gpaCount: gpaBySemester.length,
+      feesCount: fees.length
+    });
+    if (grades.length > 0) {
+      console.log(`[StudentService] Sample grades for student ${studentId}:`, grades.slice(0, 3).map(g => ({
+        courseCode: g.courseCode,
+        courseTitle: g.courseTitle,
+        grade: g.grade,
+        semester: g.semester
+      })));
+    }
     const upcomingExams = exams
       .filter((exam) => new Date(exam.examDate).getTime() >= Date.now())
       .sort((a, b) => new Date(a.examDate).getTime() - new Date(b.examDate).getTime());
@@ -444,7 +465,8 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       upcomingExams,
       gpaBySemester,
       registrationWindows: filteredRegistrationWindows,
-      fees
+      fees,
+      assignments
     };
   }
 
@@ -485,69 +507,198 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       )
     ]);
 
-    const [grades, exams, gpaBySemester, registrationWindows, fees, classroomEnrollments] = await Promise.all([
+    // Check if student has classroom enrollments but missing class registrations
+    // This can happen if they enrolled before the auto-enrollment code was added
+    if (registrationsResult.rows.length === 0 && pool) {
+      try {
+        const { listClassroomEnrollmentsForStudent } = await import('./classroomService.js');
+        const { listTeachingAssignments } = await import('./teachingService.js');
+        const { getCourseMetadata } = await import('../utils/majors.js');
+        const { findStaffById } = await import('./staffService.js');
+        
+        const classroomEnrollments = await listClassroomEnrollmentsForStudent(studentId);
+        const allAssignments = await listTeachingAssignments();
+        const studentMajor = student.primaryInterest?.trim().toLowerCase() || '';
+        
+        if (classroomEnrollments.length > 0 && studentMajor) {
+          // Student has classroom enrollments but no class registrations
+          // Create missing class registrations for teaching assignments in their enrolled classrooms
+          for (const enrollment of classroomEnrollments) {
+            const classroomAssignments = allAssignments.filter(a => {
+              if (a.classroomId !== enrollment.classroomId) return false;
+              // Check if assignment major matches student major (case-insensitive)
+              const assignmentMajor = a.majorFocus?.trim().toLowerCase() || '';
+              return assignmentMajor === studentMajor;
+            });
+            
+            for (const assignment of classroomAssignments) {
+              // Check if registration already exists
+              const existingReg = await pool.query(
+                `SELECT id FROM class_registrations WHERE student_id = $1 AND class_name = $2`,
+                [studentId, assignment.courseTitle]
+              );
+              
+              if (existingReg.rows.length === 0) {
+                // Get teacher/instructor name
+                const teacher = await findStaffById(assignment.teacherId);
+                const instructor = teacher?.displayName ?? 'TBA';
+                
+                // Get course metadata for credits
+                const metadata = getCourseMetadata(assignment.courseTitle);
+                const credits = metadata?.credits ?? 3;
+                const semester = assignment.semester || await getCurrentSemester();
+                
+                // Create class registration
+                await pool.query(
+                  `INSERT INTO class_registrations (student_id, class_name, instructor, status, semester, credits, confirmed_by, registered_at)
+                   VALUES ($1, $2, $3, 'registered', $4, $5, NULL, NOW())`,
+                  [studentId, assignment.courseTitle, instructor, semester, credits]
+                );
+                
+                // Create timetable entry if it doesn't exist
+                const existingTimetable = await pool.query(
+                  `SELECT id FROM timetables WHERE student_id = $1 AND subject = $2 AND weekday = $3`,
+                  [studentId, assignment.courseTitle, assignment.weekday]
+                );
+                
+                if (existingTimetable.rows.length === 0) {
+                  const classroomResult = await pool.query(
+                    `SELECT location FROM classrooms WHERE id = $1`,
+                    [enrollment.classroomId]
+                  );
+                  const location = classroomResult.rows[0]?.location || 'TBA';
+                  
+                  await pool.query(
+                    `INSERT INTO timetables (student_id, weekday, start_time, end_time, subject, location)
+                     VALUES ($1, $2, $3, $4, $5, $6)`,
+                    [studentId, assignment.weekday, assignment.startTime, assignment.endTime, assignment.courseTitle, location]
+                  );
+                }
+                
+                // Add to teacher roster
+                const existingRoster = await pool.query(
+                  `SELECT id FROM teacher_rosters WHERE teacher_id = $1 AND course_code = $2 AND student_id = $3`,
+                  [assignment.teacherId, assignment.courseCode, studentId]
+                );
+                
+                if (existingRoster.rows.length === 0) {
+                  await pool.query(
+                    `INSERT INTO teacher_rosters (teacher_id, course_code, course_title, student_id, status)
+                     VALUES ($1, $2, $3, $4, 'enrolled')`,
+                    [assignment.teacherId, assignment.courseCode, assignment.courseTitle, studentId]
+                  );
+                }
+                
+                console.log(`[StudentService] Auto-created missing class registration for student ${studentId}: ${assignment.courseTitle}`);
+              }
+            }
+          }
+          
+          // Re-fetch registrations after creating missing ones
+          const newRegistrationsResult = await pool.query<ClassRegistration>(
+            `SELECT id, student_id AS "studentId", class_name AS "className", instructor, status,
+                    semester, credits, confirmed_by AS "confirmedBy",
+                    to_char(registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "registeredAt"
+             FROM class_registrations
+             WHERE student_id = $1
+             ORDER BY registered_at DESC`,
+            [studentId]
+          );
+          registrationsResult.rows = newRegistrationsResult.rows;
+        }
+      } catch (error) {
+        console.error('[StudentService] Failed to auto-create missing class registrations', error);
+        // Continue even if this fails
+      }
+    }
+
+    const [grades, exams, gpaBySemester, registrationWindows, fees, classroomEnrollments, assignments] = await Promise.all([
       listStudentGrades(studentId),
       listExamAnnouncements(),
       listStudentSemesterGpa(studentId),
       listRegistrationWindows(),
       listStudentFeePayments(studentId),
-      listClassroomEnrollmentsForStudent(studentId)
+      listClassroomEnrollmentsForStudent(studentId),
+      listStudentAssignments(studentId)
     ]);
     const upcomingExams = exams
       .filter((exam) => new Date(exam.examDate).getTime() >= Date.now())
       .sort((a, b) => new Date(a.examDate).getTime() - new Date(b.examDate).getTime());
 
     // Ensure tuition fee exists based on class registrations
-    // Calculate total credits from class registrations
-    const totalCredits = registrationsResult.rows.reduce((sum, reg) => sum + (reg.credits ?? 0), 0);
+    // Calculate total credits from class registrations, grouped by semester
+    const creditsBySemester = new Map<string, number>();
+    for (const reg of registrationsResult.rows) {
+      const semester = reg.semester || await getCurrentSemester();
+      const currentCredits = creditsBySemester.get(semester) || 0;
+      creditsBySemester.set(semester, currentCredits + (reg.credits ?? 0));
+    }
+    
     let updatedFees = fees;
     
-    if (totalCredits > 0 && pool) {
+    if (registrationsResult.rows.length > 0 && pool) {
       try {
-        // Check if tuition fee exists
-        const existingTuitionFee = await pool.query(
-          `SELECT id, amount FROM fee_payments WHERE student_id = $1 AND description = $2`,
-          [studentId, 'Tuition Fee - Fall 2024']
-        );
-
-        const tuitionFeeAmount = totalCredits * 4000;
-
-        if (existingTuitionFee.rows.length === 0) {
-          // Create tuition fee if it doesn't exist - should be paid when student has registered
-          const dueDate = new Date();
-          dueDate.setDate(dueDate.getDate() + 30);
+        // Get current semester for new registrations without semester
+        const currentSemester = await getCurrentSemester();
+        
+        // Process each semester separately - combine all fees into a single payment
+        for (const [semester, totalCredits] of creditsBySemester.entries()) {
+          const feeDueDate = new Date();
+          feeDueDate.setDate(feeDueDate.getDate() + 30);
           
-          await pool.query(
-            `INSERT INTO fee_payments (student_id, amount, description, status, received_at, due_date)
-             VALUES ($1, $2, $3, 'paid', NOW(), $4)`,
-            [studentId, tuitionFeeAmount, 'Tuition Fee - Fall 2024', 'paid', dueDate.toISOString()]
+          // Calculate all fees and combine into a single payment
+          const tuitionFeeAmount = totalCredits > 0 ? totalCredits * 100 : 0;
+          const activityFeeAmount = 100;
+          const insuranceFeeAmount = 90;
+          const totalFeeAmount = tuitionFeeAmount + activityFeeAmount + insuranceFeeAmount;
+
+          // Build description with all fee components
+          const feeComponents: string[] = [];
+          if (tuitionFeeAmount > 0) {
+            feeComponents.push(`Tuition Fee - ${semester} (${totalCredits} credits)`);
+          }
+          feeComponents.push(`Activity Fee - ${semester}`);
+          feeComponents.push(`Insurance Fee - ${semester}`);
+          
+          const combinedFeeDescription = feeComponents.join('; ');
+
+          // Check if a combined fee already exists for this student and semester
+          const existingCombinedFee = await pool.query(
+            `SELECT id, amount, description FROM fee_payments 
+             WHERE student_id = $1 
+             AND description LIKE $2
+             AND status = 'pending'`,
+            [studentId, `%${semester}%`]
           );
-          console.log(`[StudentService] Created missing tuition fee (paid) for student ${studentId}: ${tuitionFeeAmount} Baht (${totalCredits} credits × 4000)`);
-          
-          // Re-fetch fees to include the newly created tuition fee
-          updatedFees = await listStudentFeePayments(studentId);
-        } else {
-          // Update tuition fee if amount is incorrect
-          const existingAmount = Number(existingTuitionFee.rows[0].amount);
-          if (existingAmount !== tuitionFeeAmount) {
+
+          if (existingCombinedFee.rows.length === 0) {
+            // Create new combined fee payment
             await pool.query(
-              `UPDATE fee_payments SET amount = $1, status = 'paid', received_at = COALESCE(received_at, NOW()) WHERE id = $2`,
-              [tuitionFeeAmount, existingTuitionFee.rows[0].id]
+              `INSERT INTO fee_payments (student_id, amount, description, status, due_date)
+               VALUES ($1, $2, $3, 'pending', $4)`,
+              [studentId, totalFeeAmount, combinedFeeDescription, 'pending', feeDueDate.toISOString()]
             );
-            console.log(`[StudentService] Updated tuition fee for student ${studentId} from ${existingAmount} to ${tuitionFeeAmount} Baht (marked as paid)`);
-            
-            // Re-fetch fees to include the updated tuition fee
+            console.log(`[StudentService] Created combined fee payment: ${totalFeeAmount} SGD for ${semester} (Tuition: ${tuitionFeeAmount}, Activity: ${activityFeeAmount}, Insurance: ${insuranceFeeAmount})`);
             updatedFees = await listStudentFeePayments(studentId);
           } else {
-            // If amount matches but status is pending, mark as paid (student has registered)
-            await pool.query(
-              `UPDATE fee_payments SET status = 'paid', received_at = COALESCE(received_at, NOW()) WHERE id = $1 AND status = 'pending'`,
-              [existingTuitionFee.rows[0].id]
-            );
+            // Update existing combined fee if amount has changed
+            const existingFee = existingCombinedFee.rows[0];
+            const existingAmount = Number(existingFee.amount);
+            
+            if (existingAmount !== totalFeeAmount) {
+              await pool.query(
+                `UPDATE fee_payments SET amount = $1, description = $2 WHERE id = $3`,
+                [totalFeeAmount, combinedFeeDescription, existingFee.id]
+              );
+              console.log(`[StudentService] Updated combined fee payment from ${existingAmount} to ${totalFeeAmount} SGD for ${semester}`);
+              updatedFees = await listStudentFeePayments(studentId);
+            } else {
+              console.log(`[StudentService] Combined fee payment already exists for ${semester} with correct amount: ${totalFeeAmount} SGD`);
+            }
           }
         }
       } catch (error) {
-        console.error('Failed to ensure tuition fee exists', error);
+        console.error('Failed to ensure semester and health insurance fees exist', error);
       }
     }
 
@@ -612,7 +763,8 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       upcomingExams,
       gpaBySemester,
       registrationWindows: filteredRegistrationWindows,
-      fees: updatedFees
+      fees: updatedFees,
+      assignments
     };
   } catch (error) {
     console.error('Failed to fetch student dashboard', error);

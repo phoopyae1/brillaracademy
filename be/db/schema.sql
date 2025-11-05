@@ -109,6 +109,16 @@ CREATE TABLE IF NOT EXISTS exam_announcements (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS announcements (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'announcement' CHECK (type IN ('announcement', 'event')),
+    event_date TIMESTAMPTZ,
+    posted_by INTEGER REFERENCES staff_accounts(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS semester_gpa (
     id SERIAL PRIMARY KEY,
     student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
@@ -158,4 +168,18 @@ CREATE TABLE IF NOT EXISTS teacher_rosters (
     student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
     status TEXT NOT NULL DEFAULT 'enrolled' CHECK (status IN ('enrolled', 'waitlisted')),
     UNIQUE(teacher_id, course_code, student_id)
+);
+
+CREATE TABLE IF NOT EXISTS student_assignments (
+    id SERIAL PRIMARY KEY,
+    teacher_id INTEGER NOT NULL REFERENCES staff_accounts(id) ON DELETE CASCADE,
+    course_code TEXT NOT NULL,
+    course_title TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    due_date TIMESTAMPTZ NOT NULL,
+    max_points DECIMAL(10, 2),
+    assignment_type TEXT NOT NULL DEFAULT 'homework' CHECK (assignment_type IN ('homework', 'project', 'quiz', 'exam', 'other')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

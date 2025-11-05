@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from 'react';
-import type { FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { useFormik } from 'formik';
+import * as yup from 'yup';
 import Container from '@mui/material/Container';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
@@ -14,84 +15,109 @@ import Divider from '@mui/material/Divider';
 import Stack from '@mui/material/Stack';
 import Alert from '@mui/material/Alert';
 import CircularProgress from '@mui/material/CircularProgress';
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
-import ToggleButton from '@mui/material/ToggleButton';
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
 import { authenticateStudent, adminLogin } from '@/lib/db';
-
-type FormState = {
-  status: 'idle' | 'submitting' | 'error';
-  message: string;
-};
 
 type LoginMode = 'student' | 'staff';
 
+const validationSchema = yup.object({
+  email: yup
+    .string()
+    .email('Enter a valid email address')
+    .required('Email is required'),
+  password: yup
+    .string()
+    .min(6, 'Password must be at least 6 characters')
+    .required('Password is required'),
+});
+
 export default function LoginPageContent() {
   const router = useRouter();
-  const [formState, setFormState] = useState<FormState>({ status: 'idle', message: '' });
   const [loginMode, setLoginMode] = useState<LoginMode>('student');
+  const [tabValue, setTabValue] = useState(0);
+  const [submitError, setSubmitError] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleModeChange = (_event: unknown, value: LoginMode | null) => {
-    if (!value) {
-      return;
-    }
+  const formik = useFormik({
+    initialValues: {
+      email: '',
+      password: '',
+    },
+    validationSchema: validationSchema,
+    onSubmit: async (values) => {
+      setIsSubmitting(true);
+      setSubmitError('');
 
-    setLoginMode(value);
-    setFormState({ status: 'idle', message: '' });
-  };
+      try {
+        if (loginMode === 'student') {
+          const student = await authenticateStudent(values.email.trim(), values.password);
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setFormState({ status: 'submitting', message: 'Authenticating your account…' });
+          if (!student?.id) {
+            setSubmitError('Invalid credentials or missing student profile.');
+            setIsSubmitting(false);
+            return;
+          }
 
-    const formData = new FormData(event.currentTarget);
-    const email = formData.get('email')?.toString().trim();
-    const password = formData.get('password')?.toString() ?? '';
+          const fullName = [student.firstName, student.lastName].filter(Boolean).join(' ');
+          const maxAgeSeconds = 60 * 60 * 24; // 24 hours
 
-    if (!email || !password) {
-      setFormState({ status: 'error', message: 'Please provide both email and password.' });
-      return;
-    }
+          // Set cookies
+          document.cookie = `brillar_student_id=${student.id}; path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax`;
 
-    try {
-      if (loginMode === 'student') {
-        const student = await authenticateStudent(email, password);
+          if (fullName) {
+            document.cookie = `brillar_student_name=${encodeURIComponent(fullName)}; path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax`;
+          }
 
-        if (!student?.id) {
-          throw new Error('Invalid credentials or missing student profile.');
+          // Use window.location for a full page reload to ensure cookie is available on server
+          setTimeout(() => {
+            window.location.replace('/student-portal');
+          }, 100);
+          return;
         }
 
-        const fullName = [student.firstName, student.lastName].filter(Boolean).join(' ');
-        const maxAgeSeconds = 60 * 60 * 24; // 24 hours
+        // Both admin and staff use adminLogin - they're both staff accounts
+        const staffSession = await adminLogin(values.email.trim(), values.password);
 
-        document.cookie = `brillar_student_id=${student.id}; path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax`;
-
-        if (fullName) {
-          document.cookie = `brillar_student_name=${encodeURIComponent(fullName)}; path=/; Max-Age=${maxAgeSeconds}; SameSite=Lax`;
+        if (!staffSession) {
+          throw new Error('Invalid staff credentials or insufficient permissions.');
         }
 
-        router.push('/student-portal');
-        router.refresh();
-        return;
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.setItem('brillar_staff_session', JSON.stringify(staffSession));
+        }
+
+        // Staff login - route based on role
+        // Check if this is the super admin (roise@edu.com) or any admin role
+        if (values.email.toLowerCase() === 'roise@edu.com' && staffSession.staff.role === 'IT_ADMIN') {
+          // Super admin goes to admin portal
+          setTimeout(() => {
+            window.location.replace('/admin');
+          }, 100);
+        } else if (staffSession.staff.role === 'IT_ADMIN' || staffSession.staff.role === 'STUDENT_ADMIN') {
+          // Any IT_ADMIN or STUDENT_ADMIN goes to admin portal
+          setTimeout(() => {
+            window.location.replace('/admin');
+          }, 100);
+        } else {
+          // Other staff (teachers, etc.) go to forge portal
+          setTimeout(() => {
+            window.location.replace('/forge');
+          }, 100);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unexpected error during login.';
+        setSubmitError(message);
+        setIsSubmitting(false);
       }
+    },
+  });
 
-      const staffSession = await adminLogin(email, password);
-
-      if (!staffSession) {
-        throw new Error('Invalid staff credentials or insufficient permissions.');
-      }
-
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.setItem('brillar_staff_session', JSON.stringify(staffSession));
-      }
-
-      router.push('/forge');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unexpected error during login.';
-      setFormState({ status: 'error', message });
-      return;
-    }
-
-    setFormState({ status: 'idle', message: '' });
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
+    setTabValue(newValue);
+    setLoginMode(newValue === 0 ? 'student' : 'staff');
+    setSubmitError('');
+    formik.resetForm();
   };
 
   return (
@@ -125,53 +151,79 @@ export default function LoginPageContent() {
               </Typography>
             </Box>
 
-            <ToggleButtonGroup
-              color="primary"
-              exclusive
-              value={loginMode}
-              onChange={handleModeChange}
-              sx={{ alignSelf: 'center' }}
+            <Tabs
+              value={tabValue}
+              onChange={handleTabChange}
+              variant="fullWidth"
+              sx={{
+                borderBottom: 1,
+                borderColor: 'divider',
+                '& .MuiTab-root': {
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  fontSize: '0.95rem'
+                }
+              }}
             >
-              <ToggleButton value="student" sx={{ px: 3 }}>
-                Student login
-              </ToggleButton>
-              <ToggleButton value="staff" sx={{ px: 3 }}>
-                Staff login
-              </ToggleButton>
-            </ToggleButtonGroup>
+              <Tab label="Student Login" />
+              <Tab label="Staff Login" />
+            </Tabs>
 
-            {formState.status !== 'idle' && formState.status !== 'submitting' && (
+            {submitError && (
               <Alert severity="error">
-                {formState.message}
+                {submitError}
               </Alert>
             )}
 
-            <Stack spacing={2.5} component="form" noValidate onSubmit={handleSubmit}>
-              <TextField name="email" label="Email address" type="email" fullWidth required autoComplete="email" />
-              <TextField
-                name="password"
-                label="Password"
-                type="password"
-                fullWidth
-                required
-                autoComplete="current-password"
-              />
-              <Button
-                type="submit"
-                variant="contained"
-                color="primary"
-                size="large"
-                sx={{ py: 1.2 }}
-                disabled={formState.status === 'submitting'}
-                startIcon={formState.status === 'submitting' ? <CircularProgress size={20} color="inherit" /> : undefined}
-              >
-                {formState.status === 'submitting'
-                  ? 'Logging in…'
-                  : loginMode === 'student'
-                    ? 'Log in as student'
-                    : 'Log in to Forge'}
-              </Button>
-            </Stack>
+            <Box 
+              component="form"
+              onSubmit={formik.handleSubmit}
+              noValidate
+            >
+              <Stack spacing={2.5}>
+                <TextField 
+                  name="email"
+                  label="Email address" 
+                  type="email" 
+                  fullWidth 
+                  required 
+                  autoComplete="email"
+                  value={formik.values.email}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                  error={formik.touched.email && Boolean(formik.errors.email)}
+                  helperText={formik.touched.email && formik.errors.email}
+                />
+                <TextField
+                  name="password"
+                  label="Password"
+                  type="password"
+                  fullWidth
+                  required
+                  autoComplete="current-password"
+                  value={formik.values.password}
+                  onChange={formik.handleChange}
+                  onBlur={formik.handleBlur}
+                  error={formik.touched.password && Boolean(formik.errors.password)}
+                  helperText={formik.touched.password && formik.errors.password}
+                />
+                <Button
+                  type="submit"
+                  variant="contained"
+                  color="primary"
+                  size="large"
+                  sx={{ py: 1.2 }}
+                  disabled={isSubmitting}
+                  startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : undefined}
+                >
+                  {isSubmitting
+                    ? 'Logging in…'
+                    : loginMode === 'student'
+                      ? 'Log in as Student'
+                      : 'Log in as Staff'}
+                </Button>
+              </Stack>
+            </Box>
 
             <Divider>Need access?</Divider>
 

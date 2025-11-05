@@ -55,7 +55,11 @@ const roleDefinitions: readonly RoleDefinition[] = [
 const DEFAULT_ADMIN_EMAIL = process.env.NEXT_PUBLIC_DEFAULT_ADMIN_EMAIL ?? 'it-admin@brillaracademy.edu';
 const DEFAULT_ADMIN_PASSWORD_HINT = process.env.NEXT_PUBLIC_DEFAULT_ADMIN_PASSWORD ?? 'changeme';
 
-export default function AdminPortalPage() {
+type AdminPortalPageProps = {
+  adminId?: number;
+};
+
+export default function AdminPortalPage({ adminId }: AdminPortalPageProps = {}) {
   const [students, setStudents] = useState<Student[]>([]);
   const [staff, setStaff] = useState<StaffAccount[]>([]);
   const [authToken, setAuthToken] = useState('');

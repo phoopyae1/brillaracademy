@@ -6,10 +6,12 @@ import {
   listTeachingAssignments,
   listTeachingAssignmentsForTeacher,
   buildTeacherDashboard,
-  syncEnrollmentsForAssignment
+  listTeacherRosters
 } from '../services/teachingService.js';
 import { recordStudentGrade } from '../services/academicService.js';
 import { findStaffById } from '../services/staffService.js';
+import { listStudents } from '../services/studentService.js';
+import { getPool } from '../db/pool.js';
 import { AVAILABLE_MAJORS } from '../utils/majors.js';
 
 const router = Router();
@@ -129,7 +131,7 @@ router.post('/grades', requireStaff(['TEACHER']), async (req: AuthenticatedReque
   }
 });
 
-router.post('/assignments/:id/sync-enrollments', requireStaff(['IT_ADMIN']), async (req: AuthenticatedRequest, res) => {
+router.get('/assignments/:id/enrollment-status', requireStaff(['IT_ADMIN', 'TEACHER']), async (req: AuthenticatedRequest, res) => {
   const assignmentId = Number(req.params.id);
 
   if (!Number.isFinite(assignmentId)) {
@@ -137,18 +139,88 @@ router.post('/assignments/:id/sync-enrollments', requireStaff(['IT_ADMIN']), asy
   }
 
   try {
-    const result = await syncEnrollmentsForAssignment(assignmentId);
+    const pool = getPool();
+
+    if (!pool) {
+      return res.status(503).json({ error: 'Database not available. Cannot check enrollment status.' });
+    }
+
+    // Get the assignment
+    const assignmentResult = await pool.query(
+      `SELECT id, teacher_id, course_code, course_title, major_focus
+       FROM teaching_assignments
+       WHERE id = $1`,
+      [assignmentId]
+    );
+
+    if (assignmentResult.rows.length === 0) {
+      return res.status(404).json({ error: `Assignment with ID ${assignmentId} not found.` });
+    }
+
+    const assignment = assignmentResult.rows[0];
+    const majorFocus = assignment.major_focus;
+
+    // Get all students with matching major
+    const allStudents = await listStudents();
+    const normalizedMajorFocus = majorFocus?.trim().toLowerCase() ?? '';
+    const studentsWithMatchingMajor = allStudents.filter((student) => {
+      const studentMajor = student.primaryInterest?.trim().toLowerCase() ?? '';
+      return studentMajor === normalizedMajorFocus;
+    });
+
+    // Get actually enrolled students from teacher roster
+    const enrolledStudents = await listTeacherRosters(assignment.teacher_id);
+    const enrolledForThisCourse = enrolledStudents.filter(
+      (roster) => roster.courseCode === assignment.course_code && roster.status === 'enrolled'
+    );
+
+    // Get student details for enrolled students
+    const enrolledStudentIds = enrolledForThisCourse.map((e) => e.studentId);
+    const enrolledStudentDetails = allStudents.filter((s) => enrolledStudentIds.includes(s.id));
+
+    // Find students who should be enrolled but aren't
+    const shouldBeEnrolled = studentsWithMatchingMajor.filter(
+      (student) => !enrolledStudentIds.includes(student.id)
+    );
+
     res.json({
-      message: `Enrollment sync completed. Enrolled: ${result.enrolled}, Skipped: ${result.skipped}`,
-      enrolled: result.enrolled,
-      skipped: result.skipped,
-      details: result.details
+      assignment: {
+        id: assignment.id,
+        courseCode: assignment.course_code,
+        courseTitle: assignment.course_title,
+        majorFocus: majorFocus
+      },
+      matchingStudents: studentsWithMatchingMajor.map((s) => ({
+        id: s.id,
+        name: `${s.firstName} ${s.lastName}`,
+        email: s.email,
+        primaryInterest: s.primaryInterest
+      })),
+      enrolledStudents: enrolledStudentDetails.map((s) => ({
+        id: s.id,
+        name: `${s.firstName} ${s.lastName}`,
+        email: s.email,
+        primaryInterest: s.primaryInterest
+      })),
+      missingEnrollments: shouldBeEnrolled.map((s) => ({
+        id: s.id,
+        name: `${s.firstName} ${s.lastName}`,
+        email: s.email,
+        primaryInterest: s.primaryInterest,
+        reason: `Student has matching major "${s.primaryInterest}" but is not enrolled in this course. Enrollment happens automatically when assignments are created.`
+      })),
+      summary: {
+        totalStudentsWithMatchingMajor: studentsWithMatchingMajor.length,
+        enrolledCount: enrolledStudentDetails.length,
+        missingCount: shouldBeEnrolled.length
+      }
     });
   } catch (error) {
-    console.error('Failed to sync enrollments', error);
-    const message = error instanceof Error ? error.message : 'Unable to sync enrollments right now.';
+    console.error('Failed to check enrollment status', error);
+    const message = error instanceof Error ? error.message : 'Unable to check enrollment status right now.';
     res.status(500).json({ error: message });
   }
 });
+
 
 export default router;

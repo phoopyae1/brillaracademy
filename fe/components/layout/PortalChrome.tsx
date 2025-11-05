@@ -34,7 +34,7 @@ export default function PortalChrome({ children }: PortalChromeProps) {
     { label: 'Home', href: '/' },
     ...(isStudentLoggedIn ? [{ label: 'Student Portal', href: '/student-portal' }] : []),
     { label: 'Forge Staff Portal', href: '/forge' },
-    { label: 'Provisioning Suite', href: '/admin/' }
+    { label: 'Admin Portal', href: '/admin' }
   ];
 
   return (

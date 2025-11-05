@@ -34,7 +34,8 @@ const createClassroomSchema = z.object({
 });
 
 const classroomSelfRegistrationSchema = z.object({
-  studentId: z.coerce.number().int().positive()
+  studentId: z.coerce.number().int().positive(),
+  courseCode: z.string().min(1).optional() // Optional for backward compatibility, but recommended
 });
 
 router.post('/', requireStaff(['IT_ADMIN']), async (req: AuthenticatedRequest, res) => {
@@ -69,10 +70,14 @@ router.post('/:id/self-registrations', async (req, res) => {
   }
 
   try {
-    const enrollment = await registerStudentForClassroom(parseResult.data.studentId, classroomId);
+    const enrollment = await registerStudentForClassroom(
+      parseResult.data.studentId, 
+      classroomId,
+      parseResult.data.courseCode // Pass course code to register for specific course
+    );
     res.status(201).json({ enrollment });
   } catch (error: any) {
-    const message = typeof error?.message === 'string' ? error.message : 'Unable to register for this classroom right now.';
+    const message = typeof error?.message === 'string' ? error.message : 'Unable to register for this course right now.';
     res.status(400).json({ error: message });
   }
 });

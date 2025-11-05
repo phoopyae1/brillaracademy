@@ -42,7 +42,7 @@ const baseStudentSchema = z.object({
   lastName: z.string().min(1),
   email: z.string().email(),
   password: z.string().min(6),
-  primaryInterest: z.enum(AVAILABLE_MAJORS as [string, ...string[]])
+  primaryInterest: z.enum([...AVAILABLE_MAJORS] as [string, ...string[]])
 });
 
 const createStudentSchema = baseStudentSchema

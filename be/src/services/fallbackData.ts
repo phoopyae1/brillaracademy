@@ -2441,10 +2441,10 @@ export const fallbackSemesterGpa: SemesterGpa[] = [
 export const fallbackRegistrationWindows: SemesterRegistration[] = [
   {
     id: 1,
-    semester: 'Fall 2024',
+    semester: '1/2026',
     status: 'open',
-    opensAt: '2024-08-10T12:00:00Z',
-    closesAt: '2024-09-10T23:59:59Z',
+    opensAt: '2025-08-10T12:00:00Z',
+    closesAt: '2025-09-10T23:59:59Z',
     courses: [
       {
         courseCode: 'BIOE-630',
@@ -2462,10 +2462,10 @@ export const fallbackRegistrationWindows: SemesterRegistration[] = [
   },
   {
     id: 2,
-    semester: 'Spring 2025',
+    semester: '2/2026',
     status: 'upcoming',
-    opensAt: '2024-11-15T12:00:00Z',
-    closesAt: '2025-01-10T23:59:59Z',
+    opensAt: '2025-11-15T12:00:00Z',
+    closesAt: '2026-01-10T23:59:59Z',
     courses: [
       {
         courseCode: 'BIOE-650',

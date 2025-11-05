@@ -59,6 +59,20 @@ export type StudentDashboardData = {
   gpaBySemester: SemesterGpa[];
   registrationWindows: SemesterRegistration[];
   fees: FeePayment[];
+  assignments: Array<{
+    id: number;
+    teacherId: number;
+    teacherName?: string | null;
+    courseCode: string;
+    courseTitle: string;
+    title: string;
+    description: string | null;
+    dueDate: string;
+    maxPoints: number | null;
+    assignmentType: 'homework' | 'project' | 'quiz' | 'exam' | 'other';
+    createdAt: string;
+    updatedAt: string;
+  }>;
 };
 
 export type CreateStudentInput = {
@@ -109,6 +123,8 @@ export type ClassroomCourse = {
   startTime: string;
   endTime: string;
   majorFocus: string;
+  teacherName?: string | null;
+  isRegistered?: boolean; // True if student is registered for this specific course
 };
 
 export type ClassroomAvailability = Classroom & {
