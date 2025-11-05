@@ -524,7 +524,9 @@ export default function ClassroomSelfRegistrationCard({
                     <Box flexGrow={1}>
                       {isRegistered ? (
                         <Typography variant="body2" color="success.main" fontWeight={600}>
-                          Reserved on {formatRegisteredAt(enrollment!.registeredAt)}
+                          {enrollment?.registeredAt 
+                            ? `Reserved on ${formatRegisteredAt(enrollment.registeredAt)}`
+                            : 'Registration confirmed'}
                         </Typography>
                       ) : (
                         <Typography variant="body2" color="text.secondary">

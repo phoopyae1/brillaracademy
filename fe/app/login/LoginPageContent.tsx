@@ -77,35 +77,31 @@ export default function LoginPageContent() {
           return;
         }
 
-        // Both admin and staff use adminLogin - they're both staff accounts
-        const staffSession = await adminLogin(values.email.trim(), values.password);
+        // Staff login path
+        if (loginMode === 'staff') {
+          // Both admin and staff use adminLogin - they're both staff accounts
+          const staffSession = await adminLogin(values.email.trim(), values.password);
 
-        if (!staffSession) {
-          throw new Error('Invalid staff credentials or insufficient permissions.');
-        }
+          if (!staffSession) {
+            setSubmitError('Invalid staff credentials or insufficient permissions.');
+            setIsSubmitting(false);
+            return;
+          }
 
-        if (typeof window !== 'undefined') {
-          window.sessionStorage.setItem('brillar_staff_session', JSON.stringify(staffSession));
-        }
+          if (typeof window !== 'undefined') {
+            window.sessionStorage.setItem('brillar_staff_session', JSON.stringify(staffSession));
+          }
 
-        // Staff login - route based on role
-        // Check if this is the super admin (roise@edu.com) or any admin role
-        if (values.email.toLowerCase() === 'roise@edu.com' && staffSession.staff.role === 'IT_ADMIN') {
-          // Super admin goes to admin portal
-          setTimeout(() => {
-            window.location.replace('/admin');
-          }, 100);
-        } else if (staffSession.staff.role === 'IT_ADMIN' || staffSession.staff.role === 'STUDENT_ADMIN') {
-          // Any IT_ADMIN or STUDENT_ADMIN goes to admin portal
-          setTimeout(() => {
-            window.location.replace('/admin');
-          }, 100);
-        } else {
-          // Other staff (teachers, etc.) go to forge portal
+          // All staff (including admins) go to forge portal - forge supports all roles
           setTimeout(() => {
             window.location.replace(`/forge/${staffSession.staff.id}`);
           }, 100);
+          return;
         }
+
+        // Fallback error
+        setSubmitError('Please select a login mode.');
+        setIsSubmitting(false);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unexpected error during login.';
         setSubmitError(message);
@@ -116,7 +112,8 @@ export default function LoginPageContent() {
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
-    setLoginMode(newValue === 0 ? 'student' : 'staff');
+    const newMode: LoginMode = newValue === 0 ? 'student' : 'staff';
+    setLoginMode(newMode);
     setSubmitError('');
     formik.resetForm();
   };
@@ -165,18 +162,23 @@ export default function LoginPageContent() {
               value={tabValue}
               onChange={handleTabChange}
               variant="fullWidth"
+              aria-label="Login type tabs"
               sx={{
                 borderBottom: 1,
                 borderColor: 'divider',
                 '& .MuiTab-root': {
                   textTransform: 'none',
                   fontWeight: 600,
-                  fontSize: '0.95rem'
+                  fontSize: '0.95rem',
+                  minHeight: 48
+                },
+                '& .MuiTabs-indicator': {
+                  height: 3
                 }
               }}
             >
-              <Tab label="Student Login" />
-              <Tab label="Staff Login" />
+              <Tab label="Student Login" id="student-tab" aria-controls="student-panel" />
+              <Tab label="Staff Login" id="staff-tab" aria-controls="staff-panel" />
             </Tabs>
 
             {submitError && (
@@ -228,9 +230,9 @@ export default function LoginPageContent() {
                 >
                   {isSubmitting
                     ? 'Logging in…'
-                    : loginMode === 'student'
-                      ? 'Log in as Student'
-                      : 'Log in as Staff'}
+                    : loginMode === 'staff'
+                      ? 'Log in as Staff'
+                      : 'Log in as Student'}
                 </Button>
               </Stack>
             </Box>
