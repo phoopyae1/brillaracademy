@@ -5,6 +5,7 @@ import { listExamAnnouncements } from './examService.js';
 import { listStudentGrades, listStudentSemesterGpa, listRegistrationWindows, findCourseOffering } from './academicService.js';
 import { listStudentFeePayments, recordFeePayment } from './financeService.js';
 import { listClassroomEnrollmentsForStudent } from './classroomService.js';
+import { listStudentAssignments } from './assignmentService.js';
 import { getCourseMetadata, getSubjectsForMajor } from '../utils/majors.js';
 import { getCurrentSemester } from './systemService.js';
 let inMemoryStudents = [...fallbackStudents];
@@ -285,14 +286,30 @@ export async function fetchStudentDashboard(studentId) {
         if (!student) {
             return null;
         }
-        const [grades, exams, gpaBySemester, registrationWindows, fees, classroomEnrollments] = await Promise.all([
+        console.log(`[StudentService] Fetching dashboard data for student ${studentId}`);
+        const [grades, exams, gpaBySemester, registrationWindows, fees, classroomEnrollments, assignments] = await Promise.all([
             listStudentGrades(studentId),
             listExamAnnouncements(),
             listStudentSemesterGpa(studentId),
             listRegistrationWindows(),
             listStudentFeePayments(studentId),
-            listClassroomEnrollmentsForStudent(studentId)
+            listClassroomEnrollmentsForStudent(studentId),
+            listStudentAssignments(studentId)
         ]);
+        console.log(`[StudentService] Dashboard data fetched for student ${studentId}:`, {
+            gradesCount: grades.length,
+            examsCount: exams.length,
+            gpaCount: gpaBySemester.length,
+            feesCount: fees.length
+        });
+        if (grades.length > 0) {
+            console.log(`[StudentService] Sample grades for student ${studentId}:`, grades.slice(0, 3).map(g => ({
+                courseCode: g.courseCode,
+                courseTitle: g.courseTitle,
+                grade: g.grade,
+                semester: g.semester
+            })));
+        }
         const upcomingExams = exams
             .filter((exam) => new Date(exam.examDate).getTime() >= Date.now())
             .sort((a, b) => new Date(a.examDate).getTime() - new Date(b.examDate).getTime());
@@ -344,7 +361,8 @@ export async function fetchStudentDashboard(studentId) {
             upcomingExams,
             gpaBySemester,
             registrationWindows: filteredRegistrationWindows,
-            fees
+            fees,
+            assignments
         };
     }
     try {
@@ -442,13 +460,14 @@ export async function fetchStudentDashboard(studentId) {
                 // Continue even if this fails
             }
         }
-        const [grades, exams, gpaBySemester, registrationWindows, fees, classroomEnrollments] = await Promise.all([
+        const [grades, exams, gpaBySemester, registrationWindows, fees, classroomEnrollments, assignments] = await Promise.all([
             listStudentGrades(studentId),
             listExamAnnouncements(),
             listStudentSemesterGpa(studentId),
             listRegistrationWindows(),
             listStudentFeePayments(studentId),
-            listClassroomEnrollmentsForStudent(studentId)
+            listClassroomEnrollmentsForStudent(studentId),
+            listStudentAssignments(studentId)
         ]);
         const upcomingExams = exams
             .filter((exam) => new Date(exam.examDate).getTime() >= Date.now())
@@ -466,48 +485,47 @@ export async function fetchStudentDashboard(studentId) {
             try {
                 // Get current semester for new registrations without semester
                 const currentSemester = await getCurrentSemester();
-                // Process each semester separately - create tuition fee, semester fee, and health insurance fee
+                // Process each semester separately - combine all fees into a single payment
                 for (const [semester, totalCredits] of creditsBySemester.entries()) {
                     const feeDueDate = new Date();
                     feeDueDate.setDate(feeDueDate.getDate() + 30);
-                    // 1. Create Tuition Fee based on credits (100 SGD per credit)
-                    if (totalCredits > 0) {
-                        const tuitionFeeAmount = totalCredits * 100;
-                        const tuitionFeeDescription = `Tuition Fee - ${semester} (${totalCredits} credits)`;
-                        const existingTuitionFee = await pool.query(`SELECT id, amount FROM fee_payments WHERE student_id = $1 AND description LIKE $2`, [studentId, `Tuition Fee - ${semester}%`]);
-                        if (existingTuitionFee.rows.length === 0) {
-                            await pool.query(`INSERT INTO fee_payments (student_id, amount, description, status, due_date)
-                 VALUES ($1, $2, $3, 'pending', $4)`, [studentId, tuitionFeeAmount, tuitionFeeDescription, 'pending', feeDueDate.toISOString()]);
-                            console.log(`[StudentService] Created tuition fee: ${tuitionFeeAmount} SGD (${totalCredits} credits × 100) for ${semester}`);
+                    // Calculate all fees and combine into a single payment
+                    const tuitionFeeAmount = totalCredits > 0 ? totalCredits * 100 : 0;
+                    const activityFeeAmount = 100;
+                    const insuranceFeeAmount = 90;
+                    const totalFeeAmount = tuitionFeeAmount + activityFeeAmount + insuranceFeeAmount;
+                    // Build description with all fee components
+                    const feeComponents = [];
+                    if (tuitionFeeAmount > 0) {
+                        feeComponents.push(`Tuition Fee - ${semester} (${totalCredits} credits)`);
+                    }
+                    feeComponents.push(`Activity Fee - ${semester}`);
+                    feeComponents.push(`Insurance Fee - ${semester}`);
+                    const combinedFeeDescription = feeComponents.join('; ');
+                    // Check if a combined fee already exists for this student and semester
+                    const existingCombinedFee = await pool.query(`SELECT id, amount, description FROM fee_payments 
+             WHERE student_id = $1 
+             AND description LIKE $2
+             AND status = 'pending'`, [studentId, `%${semester}%`]);
+                    if (existingCombinedFee.rows.length === 0) {
+                        // Create new combined fee payment
+                        await pool.query(`INSERT INTO fee_payments (student_id, amount, description, status, due_date)
+               VALUES ($1, $2, $3, 'pending', $4)`, [studentId, totalFeeAmount, combinedFeeDescription, 'pending', feeDueDate.toISOString()]);
+                        console.log(`[StudentService] Created combined fee payment: ${totalFeeAmount} SGD for ${semester} (Tuition: ${tuitionFeeAmount}, Activity: ${activityFeeAmount}, Insurance: ${insuranceFeeAmount})`);
+                        updatedFees = await listStudentFeePayments(studentId);
+                    }
+                    else {
+                        // Update existing combined fee if amount has changed
+                        const existingFee = existingCombinedFee.rows[0];
+                        const existingAmount = Number(existingFee.amount);
+                        if (existingAmount !== totalFeeAmount) {
+                            await pool.query(`UPDATE fee_payments SET amount = $1, description = $2 WHERE id = $3`, [totalFeeAmount, combinedFeeDescription, existingFee.id]);
+                            console.log(`[StudentService] Updated combined fee payment from ${existingAmount} to ${totalFeeAmount} SGD for ${semester}`);
                             updatedFees = await listStudentFeePayments(studentId);
                         }
                         else {
-                            // Update existing tuition fee if credits have changed
-                            const existingAmount = Number(existingTuitionFee.rows[0].amount);
-                            if (existingAmount !== tuitionFeeAmount) {
-                                await pool.query(`UPDATE fee_payments SET amount = $1, description = $2 WHERE id = $3`, [tuitionFeeAmount, tuitionFeeDescription, existingTuitionFee.rows[0].id]);
-                                console.log(`[StudentService] Updated tuition fee from ${existingAmount} to ${tuitionFeeAmount} SGD for ${semester}`);
-                                updatedFees = await listStudentFeePayments(studentId);
-                            }
+                            console.log(`[StudentService] Combined fee payment already exists for ${semester} with correct amount: ${totalFeeAmount} SGD`);
                         }
-                    }
-                    // 2. Create Activity Fee (100 SGD)
-                    const activityFeeDescription = `Activity Fee - ${semester}`;
-                    const existingActivityFee = await pool.query(`SELECT id FROM fee_payments WHERE student_id = $1 AND description = $2`, [studentId, activityFeeDescription]);
-                    if (existingActivityFee.rows.length === 0) {
-                        await pool.query(`INSERT INTO fee_payments (student_id, amount, description, status, due_date)
-               VALUES ($1, $2, $3, 'pending', $4)`, [studentId, 100, activityFeeDescription, 'pending', feeDueDate.toISOString()]);
-                        console.log(`[StudentService] Created activity fee: 100 SGD for ${semester}`);
-                        updatedFees = await listStudentFeePayments(studentId);
-                    }
-                    // 3. Create Insurance Fee (90 SGD)
-                    const insuranceDescription = `Insurance Fee - ${semester}`;
-                    const existingInsuranceFee = await pool.query(`SELECT id FROM fee_payments WHERE student_id = $1 AND description = $2`, [studentId, insuranceDescription]);
-                    if (existingInsuranceFee.rows.length === 0) {
-                        await pool.query(`INSERT INTO fee_payments (student_id, amount, description, status, due_date)
-               VALUES ($1, $2, $3, 'pending', $4)`, [studentId, 90, insuranceDescription, 'pending', feeDueDate.toISOString()]);
-                        console.log(`[StudentService] Created insurance fee: 90 SGD for ${semester}`);
-                        updatedFees = await listStudentFeePayments(studentId);
                     }
                 }
             }
@@ -566,7 +584,8 @@ export async function fetchStudentDashboard(studentId) {
             upcomingExams,
             gpaBySemester,
             registrationWindows: filteredRegistrationWindows,
-            fees: updatedFees
+            fees: updatedFees,
+            assignments
         };
     }
     catch (error) {

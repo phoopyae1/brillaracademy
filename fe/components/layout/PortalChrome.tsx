@@ -7,10 +7,10 @@ import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import Stack from '@mui/material/Stack';
 import Chip from '@mui/material/Chip';
-import Button from '@mui/material/Button';
 import Box from '@mui/material/Box';
 import Link from 'next/link';
 import StudentSessionControls from './StudentSessionControls';
+import PortalNavLinks from './PortalNavLinks';
 
 const highlightTags = [
   'Role-based dashboards',
@@ -31,12 +31,6 @@ export default function PortalChrome({ children }: PortalChromeProps) {
   const isStudentLoggedIn = Boolean(studentIdCookie?.value);
   const studentName = studentNameCookie?.value ? decodeURIComponent(studentNameCookie.value) : undefined;
 
-  const navLinks = [
-    { label: 'Home', href: '/' },
-    ...(isStudentLoggedIn ? [{ label: 'Student Portal', href: '/student-portal' }] : []),
-    { label: 'Forge Staff Portal', href: '/forge' },
-    { label: 'Admin Portal', href: '/admin' }
-  ];
 
   return (
     <Box
@@ -79,21 +73,8 @@ export default function PortalChrome({ children }: PortalChromeProps) {
                 Brillar Academy Portal
               </Typography>
             </Box>
-            <Stack direction="row" spacing={1.5} sx={{ ml: 'auto' }} alignItems="center">
-              {navLinks.map((item) => (
-                <Button
-                  key={item.href}
-                  component={Link}
-                  href={item.href}
-                  color="primary"
-                  variant="text"
-                  sx={{ fontWeight: 600, textTransform: 'none' }}
-                >
-                  {item.label}
-                </Button>
-              ))}
-              <StudentSessionControls isLoggedIn={isStudentLoggedIn} studentName={studentName} />
-            </Stack>
+            <PortalNavLinks isStudentLoggedIn={isStudentLoggedIn} />
+            <StudentSessionControls isLoggedIn={isStudentLoggedIn} studentName={studentName} />
           </Toolbar>
         </Container>
       </AppBar>

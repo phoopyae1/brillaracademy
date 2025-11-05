@@ -11,6 +11,8 @@ import examRoutes from './routes/examRoutes.js';
 import teachingRoutes from './routes/teachingRoutes.js';
 import systemRoutes from './routes/systemRoutes.js';
 import announcementRoutes from './routes/announcementRoutes.js';
+import assignmentRoutes from './routes/assignmentRoutes.js';
+import integrationRoutes from './routes/integrationRoutes.js';
 export function createApp() {
     const app = express();
     app.use(cors());
@@ -29,6 +31,8 @@ export function createApp() {
     app.use('/api/teaching', teachingRoutes);
     app.use('/api/system', systemRoutes);
     app.use('/api/announcements', announcementRoutes);
+    app.use('/api/assignments', assignmentRoutes);
+    app.use('/api/integration', integrationRoutes);
     return app;
 }
 const app = createApp();

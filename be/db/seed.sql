@@ -93,8 +93,7 @@ VALUES
     (14, 'Building 3 - Room 201', 'Building 3 - Second Floor', 25, '["Design Tables", "Drawing Boards", "Major: Digital Media Design", "Major: Business Administration"]', 1, '2024-08-08T14:00:00Z'),
     (15, 'Building 3 - Room 202', 'Building 3 - Second Floor', 24, '["Art Supplies", "Digital Tablets", "Major: Digital Media Design"]', 1, '2024-08-08T14:00:00Z'),
     (16, 'Building 4 - Room 101', 'Building 4 - First Floor', 35, '["Lecture Hall Setup", "Stage", "Major: Business Administration", "Major: International Relations"]', 1, '2024-08-08T15:00:00Z'),
-    (17, 'Building 4 - Room 102', 'Building 4 - First Floor', 32, '["Tiered Seating", "Audio-Visual System", "Major: International Relations", "Major: Business Administration"]', 1, '2024-08-08T15:00:00Z'),
- 
+    (17, 'Building 4 - Room 102', 'Building 4 - First Floor', 32, '["Tiered Seating", "Audio-Visual System", "Major: International Relations", "Major: Business Administration"]', 1, '2024-08-08T15:00:00Z')
 ON CONFLICT (id) DO UPDATE
 SET name = EXCLUDED.name,
     location = EXCLUDED.location,

@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { getPool } from './pool.js';
 async function migrateAnnouncements() {
     const pool = getPool();

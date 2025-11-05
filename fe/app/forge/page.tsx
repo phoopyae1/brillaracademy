@@ -1,4 +1,4 @@
-import ForgePortalPage from './ForgePortalPage';
+import ForgeRedirect from './ForgeRedirect';
 
 export const metadata = {
   title: 'Forge Staff Portal | Brillar Academy',
@@ -6,5 +6,5 @@ export const metadata = {
 };
 
 export default function Page() {
-  return <ForgePortalPage />;
+  return <ForgeRedirect />;
 }

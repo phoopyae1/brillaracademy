@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@mui/material/Button';
 import Stack from '@mui/material/Stack';
@@ -14,15 +14,28 @@ type StudentSessionControlsProps = {
 
 export default function StudentSessionControls({ isLoggedIn, studentName }: StudentSessionControlsProps) {
   const router = useRouter();
+  const [isStaffLoggedIn, setIsStaffLoggedIn] = useState(false);
+
+  // Check for staff session on client side
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const staffSession = window.sessionStorage.getItem('brillar_staff_session');
+      setIsStaffLoggedIn(Boolean(staffSession));
+    }
+  }, []);
 
   const handleLogout = useCallback(() => {
     document.cookie = 'brillar_student_id=; Max-Age=0; path=/; SameSite=Lax';
     document.cookie = 'brillar_student_name=; Max-Age=0; path=/; SameSite=Lax';
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem('brillar_staff_session');
+    }
     router.push('/login');
     router.refresh();
   }, [router]);
 
-  if (!isLoggedIn) {
+  // Hide login button if student or staff is logged in
+  if (!isLoggedIn && !isStaffLoggedIn) {
     return (
       <Button
         component={Link}
@@ -36,6 +49,12 @@ export default function StudentSessionControls({ isLoggedIn, studentName }: Stud
     );
   }
 
+  // If staff is logged in but not student, show nothing (staff handles their own logout in their portal)
+  if (isStaffLoggedIn && !isLoggedIn) {
+    return null;
+  }
+
+  // Show student session controls
   return (
     <Stack direction="row" spacing={1} alignItems="center">
       {studentName && (

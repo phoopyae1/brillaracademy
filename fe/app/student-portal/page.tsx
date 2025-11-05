@@ -17,19 +17,6 @@ export default async function Page() {
     redirect('/login');
   }
 
-  const dashboard = await fetchStudentDashboard(parsedId);
-
-  if (!dashboard) {
-    redirect('/login');
-  }
-
-  const availableClassrooms = await listAvailableClassrooms(dashboard.student.id);
-
-  return (
-    <StudentDashboard
-      dashboard={dashboard}
-      availableClassrooms={availableClassrooms}
-      classroomEnrollments={dashboard.classroomEnrollments}
-    />
-  );
+  // Redirect to dynamic route with student ID
+  redirect(`/student-portal/${parsedId}`);
 }

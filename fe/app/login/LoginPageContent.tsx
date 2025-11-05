@@ -72,7 +72,7 @@ export default function LoginPageContent() {
 
           // Use window.location for a full page reload to ensure cookie is available on server
           setTimeout(() => {
-            window.location.replace('/student-portal');
+            window.location.replace(`/student-portal/${student.id}`);
           }, 100);
           return;
         }
@@ -103,7 +103,7 @@ export default function LoginPageContent() {
         } else {
           // Other staff (teachers, etc.) go to forge portal
           setTimeout(() => {
-            window.location.replace('/forge');
+            window.location.replace(`/forge/${staffSession.staff.id}`);
           }, 100);
         }
       } catch (error) {

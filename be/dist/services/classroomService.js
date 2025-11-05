@@ -1187,40 +1187,41 @@ export async function registerStudentForClassroom(studentId, classroomId, course
                 : '1/2026';
             const feeDueDate = new Date();
             feeDueDate.setDate(feeDueDate.getDate() + 30);
-            // 1. Create Tuition Fee based on total credits (100 SGD per credit)
-            if (totalCredits > 0) {
-                const tuitionFeeAmount = totalCredits * 100;
-                const tuitionFeeDescription = `Tuition Fee - ${semesterForFee} (${totalCredits} credits)`;
-                const existingTuitionFee = await client.query(`SELECT id, amount FROM fee_payments WHERE student_id = $1 AND description LIKE $2`, [studentId, `Tuition Fee - ${semesterForFee}%`]);
-                if (existingTuitionFee.rows.length === 0) {
-                    await client.query(`INSERT INTO fee_payments (student_id, amount, description, status, due_date)
-             VALUES ($1, $2, $3, $4, $5)`, [studentId, tuitionFeeAmount, tuitionFeeDescription, 'pending', feeDueDate.toISOString()]);
-                    console.log(`[ClassroomService] Created tuition fee: ${tuitionFeeAmount} SGD (${totalCredits} credits × 100) for ${semesterForFee}`);
+            // Calculate all fees and combine into a single payment
+            const tuitionFeeAmount = totalCredits > 0 ? totalCredits * 100 : 0;
+            const activityFeeAmount = 100;
+            const insuranceFeeAmount = 90;
+            const totalFeeAmount = tuitionFeeAmount + activityFeeAmount + insuranceFeeAmount;
+            // Build description with all fee components
+            const feeComponents = [];
+            if (tuitionFeeAmount > 0) {
+                feeComponents.push(`Tuition Fee - ${semesterForFee} (${totalCredits} credits)`);
+            }
+            feeComponents.push(`Activity Fee - ${semesterForFee}`);
+            feeComponents.push(`Insurance Fee - ${semesterForFee}`);
+            const combinedFeeDescription = feeComponents.join('; ');
+            // Check if a combined fee already exists for this student and semester
+            const existingCombinedFee = await client.query(`SELECT id, amount, description FROM fee_payments 
+         WHERE student_id = $1 
+         AND description LIKE $2
+         AND status = 'pending'`, [studentId, `%${semesterForFee}%`]);
+            if (existingCombinedFee.rows.length === 0) {
+                // Create new combined fee payment
+                await client.query(`INSERT INTO fee_payments (student_id, amount, description, status, due_date)
+           VALUES ($1, $2, $3, $4, $5)`, [studentId, totalFeeAmount, combinedFeeDescription, 'pending', feeDueDate.toISOString()]);
+                console.log(`[ClassroomService] Created combined fee payment: ${totalFeeAmount} SGD for ${semesterForFee} (Tuition: ${tuitionFeeAmount}, Activity: ${activityFeeAmount}, Insurance: ${insuranceFeeAmount})`);
+            }
+            else {
+                // Update existing combined fee if amount has changed
+                const existingFee = existingCombinedFee.rows[0];
+                const existingAmount = Number(existingFee.amount);
+                if (existingAmount !== totalFeeAmount) {
+                    await client.query(`UPDATE fee_payments SET amount = $1, description = $2 WHERE id = $3`, [totalFeeAmount, combinedFeeDescription, existingFee.id]);
+                    console.log(`[ClassroomService] Updated combined fee payment from ${existingAmount} to ${totalFeeAmount} SGD for ${semesterForFee}`);
                 }
                 else {
-                    // Update existing tuition fee if credits have changed
-                    const existingAmount = Number(existingTuitionFee.rows[0].amount);
-                    if (existingAmount !== tuitionFeeAmount) {
-                        await client.query(`UPDATE fee_payments SET amount = $1, description = $2 WHERE id = $3`, [tuitionFeeAmount, tuitionFeeDescription, existingTuitionFee.rows[0].id]);
-                        console.log(`[ClassroomService] Updated tuition fee from ${existingAmount} to ${tuitionFeeAmount} SGD for ${semesterForFee}`);
-                    }
+                    console.log(`[ClassroomService] Combined fee payment already exists for ${semesterForFee} with correct amount: ${totalFeeAmount} SGD`);
                 }
-            }
-            // 2. Create Activity Fee (100 SGD)
-            const activityFeeDescription = `Activity Fee - ${semesterForFee}`;
-            const existingActivityFee = await client.query(`SELECT id FROM fee_payments WHERE student_id = $1 AND description = $2`, [studentId, activityFeeDescription]);
-            if (existingActivityFee.rows.length === 0) {
-                await client.query(`INSERT INTO fee_payments (student_id, amount, description, status, due_date)
-           VALUES ($1, $2, $3, $4, $5)`, [studentId, 100, activityFeeDescription, 'pending', feeDueDate.toISOString()]);
-                console.log(`[ClassroomService] Created activity fee: 100 SGD for ${semesterForFee}`);
-            }
-            // 3. Create Insurance Fee (90 SGD)
-            const insuranceDescription = `Insurance Fee - ${semesterForFee}`;
-            const existingInsuranceFee = await client.query(`SELECT id FROM fee_payments WHERE student_id = $1 AND description = $2`, [studentId, insuranceDescription]);
-            if (existingInsuranceFee.rows.length === 0) {
-                await client.query(`INSERT INTO fee_payments (student_id, amount, description, status, due_date)
-           VALUES ($1, $2, $3, $4, $5)`, [studentId, 90, insuranceDescription, 'pending', feeDueDate.toISOString()]);
-                console.log(`[ClassroomService] Created insurance fee: 90 SGD for ${semesterForFee}`);
             }
             await client.query('COMMIT');
             console.log(`[ClassroomService] Registered student ${studentId} for classroom ${classroomId}, created ${assignmentsResult.rows.length} timetable entries, class registrations, and fee payment`);
