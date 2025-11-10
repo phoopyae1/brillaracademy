@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Avatar from '@mui/material/Avatar';
 import Badge from '@mui/material/Badge';
 import Box from '@mui/material/Box';
@@ -41,6 +41,7 @@ import GradeIcon from '@mui/icons-material/Grade';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import ClassroomSelfRegistrationCard from '@/components/student/ClassroomSelfRegistrationCard';
 import type { StudentDashboardData, ClassroomAvailability, ClassroomEnrollment } from '@/lib/db';
+import { recordStudentAtenxionTransaction } from '@/lib/db';
 
 // Tab Views
 import OverviewTab from './dashboard/OverviewTab';
@@ -90,13 +91,94 @@ export default function StudentDashboard({
     classroomEnrollments: dashboardEnrollments
   } = dashboard;
 
+  const triggerAtenxionTransaction = useCallback(async () => {
+    try {
+      await recordStudentAtenxionTransaction(student.id);
+      console.log('[Frontend] Atenxion transaction recorded for dashboard changes');
+    } catch (error) {
+      console.error('[Frontend] Atenxion transaction error (dashboard):', error);
+    }
+  }, [student.id]);
+
+  const prevGradesRef = useRef<Set<number> | null>(null);
+  const prevFeesStatusRef = useRef<Map<number, string> | null>(null);
+  const prevAssignmentsRef = useRef<Set<number> | null>(null);
+
+  useEffect(() => {
+    const currentGradeIds = new Set(grades.map((grade) => grade.id));
+
+    if (prevGradesRef.current === null) {
+      if (currentGradeIds.size > 0) {
+        void triggerAtenxionTransaction();
+      }
+      prevGradesRef.current = currentGradeIds;
+      return;
+    }
+
+    const previousGradeIds = prevGradesRef.current;
+    const hasNewGrade = Array.from(currentGradeIds).some((id) => !previousGradeIds.has(id));
+
+    if (hasNewGrade) {
+      void triggerAtenxionTransaction();
+    }
+
+    prevGradesRef.current = currentGradeIds;
+  }, [grades, triggerAtenxionTransaction]);
+
+  useEffect(() => {
+    const currentStatus = new Map<number, string>();
+    fees.forEach((fee) => {
+      currentStatus.set(fee.id, fee.status);
+    });
+
+    if (prevFeesStatusRef.current) {
+      const previousStatus = prevFeesStatusRef.current;
+      const allIds = new Set<number>([
+        ...Array.from(previousStatus.keys()),
+        ...Array.from(currentStatus.keys())
+      ]);
+
+      const hasStatusChange = Array.from(allIds).some((id) => previousStatus.get(id) !== currentStatus.get(id));
+
+      if (hasStatusChange) {
+        void triggerAtenxionTransaction();
+      }
+    } else if (currentStatus.size > 0) {
+      // First load with fee data present
+      void triggerAtenxionTransaction();
+    }
+
+    prevFeesStatusRef.current = currentStatus;
+  }, [fees, triggerAtenxionTransaction]);
+
+  useEffect(() => {
+    const currentAssignmentIds = new Set(assignments.map((assignment) => assignment.id));
+
+    if (prevAssignmentsRef.current === null) {
+      if (currentAssignmentIds.size > 0) {
+        void triggerAtenxionTransaction();
+      }
+      prevAssignmentsRef.current = currentAssignmentIds;
+      return;
+    }
+
+    const previousAssignments = prevAssignmentsRef.current;
+    const hasNewAssignment = Array.from(currentAssignmentIds).some((id) => !previousAssignments.has(id));
+
+    if (hasNewAssignment) {
+      void triggerAtenxionTransaction();
+    }
+
+    prevAssignmentsRef.current = currentAssignmentIds;
+  }, [assignments, triggerAtenxionTransaction]);
+
   const avatarInitials = `${student.firstName.charAt(0)}${student.lastName ? student.lastName.charAt(0) : ''}`;
 
   const renderTabContent = () => {
     switch (activeTab) {
       case 'overview':
         return (
-          <OverviewTab       
+          <OverviewTab
             student={student}
             timetable={timetable}
             schedule={schedule}
@@ -121,7 +203,7 @@ export default function StudentDashboard({
       case 'assignments':
         return <AssignmentsTab assignments={assignments} />;
       case 'messages':
-        return <MessagesTab />;
+        return <MessagesTab studentId={student.id} />;
       default:
         return null;
     }

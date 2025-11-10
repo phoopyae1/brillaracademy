@@ -429,6 +429,11 @@ router.post('/register-course', requireStudent(), async (req: AuthenticatedStude
   } catch (error: any) {
     const message = typeof error?.message === 'string' ? error.message : 'Unable to register for this course right now.';
     console.error('[Agent] Error registering for course:', error);
+
+    if (message.startsWith('SCHEDULE_CONFLICT') || message.includes('You are already registered')) {
+      return res.status(409).json({ error: message });
+    }
+
     return res.status(400).json({ error: message });
   }
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -12,7 +12,7 @@ import Alert from '@mui/material/Alert';
 import MailRoundedIcon from '@mui/icons-material/MailRounded';
 import EventIcon from '@mui/icons-material/Event';
 import AnnouncementIcon from '@mui/icons-material/Campaign';
-import { listAnnouncements, type Announcement } from '@/lib/db';
+import { listAnnouncements, type Announcement, recordStudentAtenxionTransaction } from '@/lib/db';
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat('en-US', {
@@ -21,16 +21,43 @@ function formatDateTime(value: string) {
   }).format(new Date(value));
 }
 
-export default function MessagesTab() {
+interface MessagesTabProps {
+  studentId: number;
+}
+
+export default function MessagesTab({ studentId }: MessagesTabProps) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const seenAnnouncementIdsRef = useRef<Set<string>>(new Set());
+
+  const triggerAtenxionTransaction = useCallback(async () => {
+    try {
+      await recordStudentAtenxionTransaction(studentId);
+      console.log('[Frontend] Atenxion transaction recorded for announcements');
+    } catch (err) {
+      console.error('[Frontend] Atenxion transaction error (announcements):', err);
+    }
+  }, [studentId]);
 
   useEffect(() => {
     const loadAnnouncements = async () => {
       try {
         setLoading(true);
         const data = await listAnnouncements();
+        const previousIds = seenAnnouncementIdsRef.current;
+        const nextIds = new Set(data.map((item) => String(item.id)));
+
+        // Detect new announcements (ids that weren't previously seen)
+        const isFirstLoadWithAnnouncements = previousIds.size === 0 && data.length > 0;
+        const hasNewAnnouncement =
+          data.some((item) => !previousIds.has(String(item.id)));
+
+        if (isFirstLoadWithAnnouncements || (previousIds.size > 0 && hasNewAnnouncement)) {
+          void triggerAtenxionTransaction();
+        }
+
+        seenAnnouncementIdsRef.current = nextIds;
         setAnnouncements(data);
         setError(null);
       } catch (err) {

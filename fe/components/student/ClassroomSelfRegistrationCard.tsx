@@ -20,7 +20,7 @@ import WarningIcon from '@mui/icons-material/Warning';
 import WorkspacePremiumRoundedIcon from '@mui/icons-material/WorkspacePremiumRounded';
 import CelebrationRoundedIcon from '@mui/icons-material/CelebrationRounded';
 import type { ClassroomAvailability, ClassroomEnrollment, ClassroomCourse } from '@/lib/db';
-import { registerForClassroom } from '@/lib/db';
+import { registerForClassroom, recordStudentAtenxionTransaction } from '@/lib/db';
 
 type RegistrationState = {
   status: 'idle' | 'loading' | 'success' | 'error';
@@ -57,6 +57,15 @@ export default function ClassroomSelfRegistrationCard({
     classroomId: number;
     conflictMessage: string;
   }>({ open: false, courseCode: '', classroomId: 0, conflictMessage: '' });
+
+  const triggerAtenxionTransaction = useCallback(async () => {
+    try {
+      await recordStudentAtenxionTransaction(studentId);
+      console.log('[Frontend] Atenxion transaction recorded');
+    } catch (error) {
+      console.error('[Frontend] Atenxion transaction error:', error);
+    }
+  }, [studentId]);
 
   const enrollmentLookup = useMemo(() => {
     const map = new Map<number, ClassroomEnrollment>();
@@ -121,6 +130,8 @@ export default function ClassroomSelfRegistrationCard({
           message: `You have reserved a spot. ${formatRegisteredAt(enrollment.registeredAt)} registration confirmed.`
         }
       }));
+
+      triggerAtenxionTransaction();
 
       // Refresh the page to show the new class registration in the dashboard
       // Wait a bit to ensure the database transaction is committed

@@ -1,6 +1,7 @@
 import { getPool } from '../db/pool.js';
 import { fallbackClassrooms, fallbackClassroomEnrollments } from './fallbackData.js';
 import type { Classroom, ClassroomAvailability, ClassroomEnrollment } from './types.js';
+import { recordAtenxionTransaction } from './atenxionService.js';
 
 let inMemoryClassrooms = [...fallbackClassrooms];
 // Start next ID after the highest ID in fallback data (should be 217 after latest seed)
@@ -466,7 +467,7 @@ export async function listClassroomsWithAvailability(studentId?: number): Promis
 
       // Track unique courses per classroom to avoid duplicates
       const uniqueCourseKeys = new Map<number, Set<string>>();
-      
+
       for (const row of rows) {
         const classroomId = Number(row.classroom_id);
         if (!classroomCourses.has(classroomId)) {
@@ -492,8 +493,8 @@ export async function listClassroomsWithAvailability(studentId?: number): Promis
         // Only add if this course hasn't been added to this classroom yet
         if (!classroomKeys.has(courseKey)) {
           classroomKeys.add(courseKey);
-          classroomCourses.get(classroomId)!.push(courseData);
-          console.log(`[ClassroomService] Added course "${courseData.courseTitle}" (${courseData.majorFocus}) by ${courseData.teacherName || 'Unknown'} to classroom ${classroomId}`);
+        classroomCourses.get(classroomId)!.push(courseData);
+        console.log(`[ClassroomService] Added course "${courseData.courseTitle}" (${courseData.majorFocus}) by ${courseData.teacherName || 'Unknown'} to classroom ${classroomId}`);
         } else {
           console.log(`[ClassroomService] Skipped duplicate course "${courseData.courseTitle}" (${courseKey}) in classroom ${classroomId}`);
         }
@@ -1012,7 +1013,7 @@ export async function registerStudentForClassroom(
                )`,
             [studentId, normalizedWeekday, courseTitle, courseStartTimeFormatted, courseEndTimeFormatted]
           );
-          
+            
           // CRITICAL: Simple direct check - ANY course at same time on same day = CONFLICT
           // NO EXCEPTIONS - if there's ANY course at this time, block registration
           // This checks DAY and TIME only, regardless of course or teacher
@@ -1110,7 +1111,7 @@ export async function registerStudentForClassroom(
            WHERE ta.course_code = $1 AND ta.teacher_id = $2`,
           [courseCode, teacherId]
         );
-            
+
         console.log(`[ClassroomService] ======================================`);
         console.log(`[ClassroomService] DUPLICATE CHECK for ${courseCode} (${courseTitle})`);
         console.log(`[ClassroomService] Student: ${studentId}, Teacher: ${teacherId}`);
@@ -1152,7 +1153,7 @@ export async function registerStudentForClassroom(
              AND ta.course_code = $2 
              AND ta.teacher_id = $3`,
           [studentId, courseCode, teacherId]
-        );
+              );
 
         console.log(`[ClassroomService] Checking for existing ${courseCode} registrations:`);
         console.log(`[ClassroomService]   - Query params: studentId=${studentId}, courseCode=${courseCode}, teacherId=${teacherId}`);
@@ -1195,7 +1196,7 @@ export async function registerStudentForClassroom(
             console.log(`[ClassroomService] ⚠️ DUPLICATE DETECTED - Same course on same day:`);
             console.log(`[ClassroomService]   Already registered: ${existingTime}`);
             console.log(`[ClassroomService]   Trying to register: ${newTime}`);
-            
+
             // Check if exact same time slot
             const sameTimeSlot = sameDayRegistrations.some((r: any) =>
               r.start_time === normalizedSpecificTime
@@ -1943,6 +1944,11 @@ export async function registerStudentForClassroom(
 
       await client.query('COMMIT');
       console.log(`[ClassroomService] Registered student ${studentId} for classroom ${classroomId}, created ${assignmentsResult.rows.length} timetable entries, class registrations, and fee payment`);
+
+      // Record Atenxion transaction (non-blocking, fire-and-forget)
+      recordAtenxionTransaction(String(studentId)).catch((error) => {
+        console.error('[ClassroomService] Failed to record Atenxion transaction:', error);
+      });
       
       return enrollment;
     } catch (error: any) {

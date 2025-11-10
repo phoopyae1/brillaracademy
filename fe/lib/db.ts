@@ -566,6 +566,16 @@ export async function registerForClassroom(input: {
   return data.enrollment;
 }
 
+export async function recordStudentAtenxionTransaction(studentId: number | string, token?: string | null): Promise<void> {
+  await apiRequest('/atenxion/transaction', {
+    method: 'POST',
+    body: {
+      studentId: String(studentId),
+      token: token ?? undefined
+    }
+  });
+}
+
 export async function listFeePayments(token: string, studentId?: number): Promise<FeePayment[]> {
   const query = studentId ? `?studentId=${studentId}` : '';
   const data = await apiRequest<{ payments?: FeePayment[] }>(`/finance/payments${query}`, {
