@@ -68,43 +68,61 @@ router.post('/student-registrations', requireStudent(), async (req: Authenticate
       return res.status(500).json({ error: 'Database connection not available.' });
     }
 
-    // Fetch class registrations from database with staff name who confirmed
     const { rows } = await pool.query(
       `SELECT 
-        cr.id,
-        cr.student_id AS "studentId",
-        cr.class_name AS "className",
-        cr.instructor,
-        cr.status,
-        cr.semester,
-        cr.credits,
-        cr.confirmed_by AS "confirmedBy",
-        sa.display_name AS "confirmedByName",
-        to_char(cr.registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "registeredAt"
+         cr.id,
+         cr.student_id AS "studentId",
+         cr.class_name AS "className",
+         cr.instructor,
+         cr.status,
+         cr.semester,
+         cr.credits,
+         cr.confirmed_by AS "confirmedBy",
+         sa.display_name AS "confirmedByName",
+         to_char(cr.registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "registeredAt",
+         ta.course_code AS "courseCode",
+         ta.weekday,
+         to_char(ta.start_time, 'HH24:MI') AS "startTime",
+         to_char(ta.end_time, 'HH24:MI') AS "endTime",
+         ta.student_group AS "studentGroup",
+         ta.semester AS "teachingSemester",
+         classroom.name AS "classroomName",
+         classroom.location AS "classroomLocation",
+         teacher.display_name AS "teacherName"
        FROM class_registrations cr
        LEFT JOIN staff_accounts sa ON cr.confirmed_by = sa.id
+       LEFT JOIN teaching_assignments ta
+         ON LOWER(TRIM(ta.course_title)) = LOWER(TRIM(cr.class_name))
+       LEFT JOIN classrooms classroom ON ta.classroom_id = classroom.id
+       LEFT JOIN staff_accounts teacher ON ta.teacher_id = teacher.id
        WHERE cr.student_id = $1
        ORDER BY cr.registered_at DESC`,
       [id]
     );
 
-    // Return flat response - direct array of registration objects (no nesting)
-    // confirmedBy: null = pending, has value = confirmed (staff ID)
-    return res.json(
-      rows.map((row: any) => ({
-        id: row.id,
-        studentId: row.studentId,
-        className: row.className,
-        instructor: row.instructor,
-        status: row.status, // e.g., 'registered', 'waitlisted'
-        isConfirmed: row.confirmedBy !== null, // true if confirmed, false if pending
-        confirmedBy: row.confirmedBy, // staff ID who confirmed, or null if pending
-        confirmedByName: row.confirmedByName || null, // staff name who confirmed, or null if pending
-        semester: row.semester,
-        credits: row.credits,
-        registeredAt: row.registeredAt
-      }))
-    );
+    const detailedRegistrations = rows.map((row: any) => ({
+      id: row.id,
+      studentId: row.studentId,
+      className: row.className,
+      courseCode: row.courseCode || null,
+      instructor: row.instructor || row.teacherName || null,
+      teacherName: row.teacherName || row.instructor || null,
+      status: row.status,
+      isConfirmed: row.confirmedBy !== null,
+      confirmedBy: row.confirmedBy,
+      confirmedByName: row.confirmedByName || null,
+      semester: row.semester || row.teachingSemester || null,
+      credits: row.credits,
+      registeredAt: row.registeredAt,
+      weekday: row.weekday || null,
+      startTime: row.startTime || null,
+      endTime: row.endTime || null,
+      classroomName: row.classroomName || null,
+      classroomLocation: row.classroomLocation || null,
+      studentGroup: row.studentGroup || null
+    }));
+
+    return res.json(detailedRegistrations);
   } catch (error) {
     console.error('[Agent] Error fetching student registrations:', error);
     return res.status(500).json({ error: 'Failed to fetch student registrations.' });
