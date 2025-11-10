@@ -42,9 +42,41 @@ export default function PortalNavLinks({ isStudentLoggedIn }: PortalNavLinksProp
     (e: React.MouseEvent, href: string) => {
       if (isStudentLoggedIn) {
         e.preventDefault();
-        // Logout student by clearing cookies
-        document.cookie = 'brillar_student_id=; Max-Age=0; path=/; SameSite=Lax';
-        document.cookie = 'brillar_student_name=; Max-Age=0; path=/; SameSite=Lax';
+        // Logout student by clearing all cookies
+        const cookiesToClear = [
+          'brillar_student_id',
+          'brillar_student_name',
+          'student_portal_token',
+        ];
+        
+        cookiesToClear.forEach(cookieName => {
+          // Clear with path=/
+          document.cookie = `${cookieName}=; Max-Age=0; path=/; SameSite=Lax`;
+          // Also try clearing without SameSite (in case it was set differently)
+          document.cookie = `${cookieName}=; Max-Age=0; path=/`;
+          // Also try with expires (for older browsers)
+          document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+        });
+        
+        // Clear localStorage and sessionStorage
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('student_portal');
+          // Clear all localStorage keys that start with 'student'
+          Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('student') || key.includes('student_portal')) {
+              localStorage.removeItem(key);
+            }
+          });
+          
+          window.sessionStorage.removeItem('student_portal');
+          // Clear all sessionStorage keys that start with 'student'
+          Object.keys(window.sessionStorage).forEach(key => {
+            if (key.startsWith('student') || key.includes('student_portal')) {
+              window.sessionStorage.removeItem(key);
+            }
+          });
+        }
+        
         // Redirect to login
         setTimeout(() => {
           window.location.href = '/login';

@@ -12,22 +12,22 @@ export default function ForgeRedirect() {
   useEffect(() => {
     // Small delay to ensure sessionStorage is available after login redirect
     const timer = setTimeout(() => {
-      if (typeof window !== 'undefined') {
-        const staffSession = window.sessionStorage.getItem('brillar_staff_session');
-        if (staffSession) {
-          try {
-            const parsed = JSON.parse(staffSession);
-            if (parsed?.staff?.id) {
-              router.replace(`/forge/${parsed.staff.id}`);
-              return;
-            }
-          } catch (e) {
-            // Ignore parse errors
+    if (typeof window !== 'undefined') {
+      const staffSession = window.sessionStorage.getItem('brillar_staff_session');
+      if (staffSession) {
+        try {
+          const parsed = JSON.parse(staffSession);
+          if (parsed?.staff?.id) {
+            router.replace(`/forge/${parsed.staff.id}`);
+            return;
           }
+        } catch (e) {
+          // Ignore parse errors
         }
-        // If no staff session, redirect to login
-        router.replace('/login');
       }
+      // If no staff session, redirect to login
+      router.replace('/login');
+    }
       setLoading(false);
     }, 100);
 

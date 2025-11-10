@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { ReactNode } from 'react';
 import ThemeRegistry from '@/components/ThemeRegistry';
 import PortalChrome from '@/components/layout/PortalChrome';
+import WidgetContainer from '@/components/layout/WidgetContainer';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -19,6 +20,7 @@ export default function RootLayout({ children }: Props) {
       <body>
         <ThemeRegistry>
           <PortalChrome>{children}</PortalChrome>
+          <WidgetContainer />
         </ThemeRegistry>
       </body>
     </html>

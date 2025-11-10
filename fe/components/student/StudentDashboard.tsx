@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from 'react';
-import Image from 'next/image';
 import Avatar from '@mui/material/Avatar';
 import Badge from '@mui/material/Badge';
 import Box from '@mui/material/Box';
+import Image from 'next/image';
 import Chip from '@mui/material/Chip';
 import Container from '@mui/material/Container';
 import Divider from '@mui/material/Divider';
@@ -96,7 +96,7 @@ export default function StudentDashboard({
     switch (activeTab) {
       case 'overview':
         return (
-          <OverviewTab
+          <OverviewTab       
             student={student}
             timetable={timetable}
             schedule={schedule}

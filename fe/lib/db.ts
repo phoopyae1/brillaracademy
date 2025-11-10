@@ -148,6 +148,10 @@ export type ClassroomCourse = {
   majorFocus: string;
   teacherName?: string | null;
   isRegistered?: boolean; // True if student is registered for this specific course
+  sameSubjectRegistered?: boolean; // True if student is registered for same course code at different time
+  seatsFilled?: number; // Number of students enrolled in THIS specific course (not the whole classroom)
+  seatsAvailable?: number; // Seats available for THIS specific course
+  isFull?: boolean; // True if THIS specific course is full
 };
 
 export type ClassroomAvailability = Classroom & {
@@ -310,14 +314,18 @@ export async function fetchFeatures(): Promise<Feature[]> {
   }
 }
 
-export async function authenticateStudent(email: string, password: string): Promise<Student | null> {
+export async function authenticateStudent(email: string, password: string): Promise<{ student: Student; accessToken: string } | null> {
   try {
-    const data = await apiRequest<{ student?: Student }>('/login', {
+    const data = await apiRequest<{ student?: Student; accessToken?: string }>('/login', {
       method: 'POST',
       body: { email, password }
     });
 
-    return data.student ?? null;
+    if (!data.student || !data.accessToken) {
+      return null;
+    }
+
+    return { student: data.student, accessToken: data.accessToken };
   } catch (error) {
     console.error('Student authentication failed', error);
     return null;
@@ -539,6 +547,8 @@ export async function registerForClassroom(input: {
   studentId: number;
   classroomId: number;
   courseCode?: string; // Optional: if provided, register only for this specific course
+  weekday?: string; // Optional: specific weekday to register for (used for conflict checking)
+  startTime?: string; // Optional: specific start time to register for (used for conflict checking)
 }): Promise<ClassroomEnrollment> {
   const data = await apiRequest<{ enrollment: ClassroomEnrollment }>(
     `/classrooms/${input.classroomId}/self-registrations`,
@@ -546,7 +556,9 @@ export async function registerForClassroom(input: {
       method: 'POST',
       body: { 
         studentId: input.studentId,
-        courseCode: input.courseCode // Pass course code to register for specific course
+        courseCode: input.courseCode, // Pass course code to register for specific course
+        weekday: input.weekday, // Pass specific weekday if provided (for conflict checking)
+        startTime: input.startTime // Pass specific start time if provided (for conflict checking)
       }
     }
   );
@@ -660,4 +672,72 @@ export async function deleteAssignment(token: string, id: number): Promise<void>
     method: 'DELETE',
     token
   });
+}
+
+export type Integration = {
+  contextKey: string;
+  iframe: string;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export async function getIntegration(contextKey: string): Promise<Integration | null> {
+  try {
+    const data = await apiRequest<{ contextKey?: string; iframe?: string; createdAt?: string; updatedAt?: string }>(
+      `/integration/${contextKey}`
+    );
+    if (data.contextKey && data.iframe) {
+      return {
+        contextKey: data.contextKey,
+        iframe: data.iframe,
+        createdAt: data.createdAt || new Date().toISOString(),
+        updatedAt: data.updatedAt
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Failed to fetch integration', error);
+    return null;
+  }
+}
+
+export async function listIntegrations(): Promise<Integration[]> {
+  try {
+    const data = await apiRequest<{ integrations?: Integration[] }>('/integration');
+    return data.integrations ?? [];
+  } catch (error) {
+    console.error('Failed to fetch integrations', error);
+    return [];
+  }
+}
+
+/**
+ * Get token and iframe from MongoDB via backend API
+ * Fetches contextKey from MongoDB first, then uses it to get the token and iframe
+ * Follows the same pattern as fetchIntegrationEmbed
+ */
+export async function getToken(): Promise<{ token: string; iframe: string } | null> {
+  const apiBaseUrl = resolveApiBaseUrl().replace(/\/$/, '');
+  // resolveApiBaseUrl already includes /api, so use /integration/token directly
+  const response = await fetch(`${apiBaseUrl}/integration/token`);
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || response.statusText);
+  }
+
+  const body = (await response.json()) as { token?: string | null; iframe?: string | null };
+  
+  if (body.token && body.iframe) {
+    return {
+      token: body.token,
+      iframe: body.iframe
+    };
+  }
+  
+  return null;
 }

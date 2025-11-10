@@ -5,6 +5,8 @@ import {
   getIntegration,
   listIntegrations,
   deleteIntegration,
+  getTokenByContextKey,
+  getToken,
 } from '../services/integrationService.js';
 
 const router = Router();
@@ -26,6 +28,50 @@ router.get('/', async (_req, res) => {
   } catch (error) {
     console.error('[Integration] Error listing integrations:', error);
     res.status(500).json({ error: 'Failed to list integrations' });
+  }
+});
+
+/**
+ * GET /api/integration/token
+ * Get token and iframe from MongoDB by fetching contextKey first
+ */
+router.get('/token', async (_req, res) => {
+  try {
+    const result = await getTokenByContextKey();
+    
+    if (!result) {
+      return res.status(404).json({ error: 'Token not found' });
+    }
+
+    res.json({ token: result.token, iframe: result.iframe });
+  } catch (error) {
+    console.error('[Integration] Error getting token:', error);
+    res.status(500).json({ error: 'Failed to get token' });
+  }
+});
+
+/**
+ * GET /api/integration/token/:contextKey
+ * Get token and iframe from MongoDB by specific contextKey
+ */
+router.get('/token/:contextKey', async (req, res) => {
+  try {
+    const { contextKey } = req.params;
+
+    if (!contextKey) {
+      return res.status(400).json({ error: 'Context key is required' });
+    }
+
+    const result = await getToken(contextKey);
+    
+    if (!result) {
+      return res.status(404).json({ error: 'Token not found for this context key' });
+    }
+
+    res.json({ token: result.token, iframe: result.iframe });
+  } catch (error) {
+    console.error('[Integration] Error getting token:', error);
+    res.status(500).json({ error: 'Failed to get token' });
   }
 });
 

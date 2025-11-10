@@ -180,4 +180,34 @@ router.post('/:id/registrations', async (req, res) => {
   }
 });
 
+// DEBUG: Clear all registrations for a student (for testing only)
+router.delete('/:id/registrations', async (req, res) => {
+  const studentId = Number(req.params.id);
+
+  if (!Number.isFinite(studentId)) {
+    return res.status(400).json({ error: 'Invalid student id.' });
+  }
+
+  try {
+    const { getPool } = await import('../db/pool.js');
+    const pool = getPool();
+    
+    if (!pool) {
+      return res.status(500).json({ error: 'Database not available.' });
+    }
+
+    // Clear all registrations for this student
+    await pool.query('DELETE FROM timetables WHERE student_id = $1', [studentId]);
+    await pool.query('DELETE FROM class_registrations WHERE student_id = $1', [studentId]);
+    await pool.query('DELETE FROM teacher_rosters WHERE student_id = $1', [studentId]);
+    await pool.query('DELETE FROM classroom_registrations WHERE student_id = $1', [studentId]);
+
+    console.log(`[StudentRoutes] Cleared all registrations for student ${studentId}`);
+    return res.json({ message: `Cleared all registrations for student ${studentId}` });
+  } catch (error: any) {
+    console.error('Failed to clear registrations:', error);
+    return res.status(500).json({ error: 'Failed to clear registrations.' });
+  }
+});
+
 export default router;

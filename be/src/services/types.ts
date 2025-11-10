@@ -125,6 +125,10 @@ export type ClassroomCourse = {
   majorFocus: string;
   teacherName?: string | null;
   isRegistered?: boolean; // True if student is registered for this specific course
+  sameSubjectRegistered?: boolean; // True if student is registered for same course code at different time
+  seatsFilled?: number; // Number of students enrolled in THIS specific course (not the whole classroom)
+  seatsAvailable?: number; // Seats available for THIS specific course
+  isFull?: boolean; // True if THIS specific course is full
 };
 
 export type ClassroomAvailability = Classroom & {

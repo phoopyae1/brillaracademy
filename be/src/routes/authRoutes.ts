@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticateStudent } from '../services/studentService.js';
 import { findStaffByEmail } from '../services/staffService.js';
-import { signStaffToken } from '../utils/token.js';
+import { signStaffToken, signStudentToken } from '../utils/token.js';
 
 const router = Router();
 
@@ -18,7 +18,13 @@ router.post('/login', async (req, res) => {
     return res.status(401).json({ error: 'Invalid credentials.' });
   }
 
-  return res.json({ student });
+  // Auto-generate JWT accessToken for student (like admin login)
+  const accessToken = signStudentToken({ studentId: student.id, email: student.email });
+
+  return res.json({ 
+    accessToken,
+    student 
+  });
 });
 
 router.post('/admin/login', async (req, res) => {

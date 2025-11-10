@@ -83,3 +83,88 @@ export async function deleteIntegration(contextKey: string): Promise<boolean> {
   const result = await collection.deleteOne({ contextKey });
   return result.deletedCount > 0;
 }
+
+/**
+ * Get contextKey from MongoDB integrations collection
+ * Fetches the first available integration document's contextKey
+ */
+export async function getContextKey(): Promise<string | null> {
+  const db = await getMongoDb();
+  if (!db) {
+    return null;
+  }
+
+  try {
+    const collection = db.collection('integrations');
+    // Get the most recent integration document to extract contextKey
+    const integrationDoc = await collection.findOne({}, { sort: { createdAt: -1 } });
+    
+    if (integrationDoc && integrationDoc.contextKey) {
+      return integrationDoc.contextKey as string;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('[Integration] Error fetching contextKey:', error);
+    return null;
+  }
+}
+
+/**
+ * Get token and iframe from MongoDB integrations collection by contextKey
+ * The token is stored in the 'contextKey' field, not a separate 'token' field
+ */
+export async function getToken(contextKey: string): Promise<{ token: string; iframe: string } | null> {
+  const db = await getMongoDb();
+  if (!db) {
+    return null;
+  }
+
+  try {
+    const collection = db.collection('integrations');
+    const integrationDoc = await collection.findOne({ contextKey });
+    
+    // The token is stored in contextKey field, not a separate token field
+    if (integrationDoc && integrationDoc.contextKey && integrationDoc.iframe) {
+      return {
+        token: integrationDoc.contextKey as string,
+        iframe: integrationDoc.iframe as string
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('[Integration] Error fetching token:', error);
+    return null;
+  }
+}
+
+/**
+ * Get token and iframe from MongoDB by fetching the most recent integration
+ * The token is stored in the 'contextKey' field, and we return it as 'token'
+ */
+export async function getTokenByContextKey(): Promise<{ token: string; iframe: string } | null> {
+  const db = await getMongoDb();
+  if (!db) {
+    return null;
+  }
+
+  try {
+    const collection = db.collection('integrations');
+    // Get the most recent integration document
+    const integrationDoc = await collection.findOne({}, { sort: { createdAt: -1 } });
+    
+    // The token is stored in contextKey field, not a separate token field
+    if (integrationDoc && integrationDoc.contextKey && integrationDoc.iframe) {
+      return {
+        token: integrationDoc.contextKey as string,
+        iframe: integrationDoc.iframe as string
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('[Integration] Error fetching token by contextKey:', error);
+    return null;
+  }
+}

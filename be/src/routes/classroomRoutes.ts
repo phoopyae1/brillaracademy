@@ -35,7 +35,9 @@ const createClassroomSchema = z.object({
 
 const classroomSelfRegistrationSchema = z.object({
   studentId: z.coerce.number().int().positive(),
-  courseCode: z.string().min(1).optional() // Optional for backward compatibility, but recommended
+  courseCode: z.string().min(1).optional(), // Optional for backward compatibility, but recommended
+  weekday: z.string().min(1).optional(), // Optional: specific weekday to register for (used for conflict checking)
+  startTime: z.string().min(1).optional() // Optional: specific start time to register for (used for conflict checking)
 });
 
 router.post('/', requireStaff(['IT_ADMIN']), async (req: AuthenticatedRequest, res) => {
@@ -61,6 +63,8 @@ router.post('/:id/self-registrations', async (req, res) => {
     return res.status(400).json({ error: 'Invalid classroom id.' });
   }
 
+  console.log('[ClassroomRoutes] Registration request body:', JSON.stringify(req.body, null, 2));
+
   const parseResult = classroomSelfRegistrationSchema.safeParse(req.body);
 
   if (!parseResult.success) {
@@ -69,11 +73,21 @@ router.post('/:id/self-registrations', async (req, res) => {
       .json({ error: 'Invalid registration payload.', details: parseResult.error.flatten() });
   }
 
+  console.log('[ClassroomRoutes] Parsed registration data:', {
+    studentId: parseResult.data.studentId,
+    classroomId,
+    courseCode: parseResult.data.courseCode,
+    weekday: parseResult.data.weekday,
+    startTime: parseResult.data.startTime
+  });
+
   try {
     const enrollment = await registerStudentForClassroom(
       parseResult.data.studentId, 
       classroomId,
-      parseResult.data.courseCode // Pass course code to register for specific course
+      parseResult.data.courseCode, // Pass course code to register for specific course
+      parseResult.data.weekday, // Pass specific weekday if provided (for conflict checking)
+      parseResult.data.startTime // Pass specific start time if provided (for conflict checking)
     );
     res.status(201).json({ enrollment });
   } catch (error: any) {

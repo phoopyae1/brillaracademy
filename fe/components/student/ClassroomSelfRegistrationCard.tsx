@@ -70,9 +70,10 @@ export default function ClassroomSelfRegistrationCard({
     return map;
   }, [enrollmentList]);
 
-  const handleRegistration = async (classroomId: number, courseCode: string) => {
-    const registrationKey = `${classroomId}-${courseCode}`;
-    console.log(`[Frontend] Registering student ${studentId} for classroom ${classroomId}, courseCode: "${courseCode}"`);
+  const handleRegistration = async (classroomId: number, courseCode: string, weekday?: string, startTime?: string) => {
+    // Include weekday and startTime in the key to handle multiple sections of same course
+    const registrationKey = `${classroomId}-${courseCode}-${weekday}-${startTime}`;
+    console.log(`[Frontend] Registering student ${studentId} for classroom ${classroomId}, courseCode: "${courseCode}", weekday: "${weekday}", startTime: "${startTime}"`);
     
     setRegistrationStates((prev) => ({
       ...prev,
@@ -80,7 +81,13 @@ export default function ClassroomSelfRegistrationCard({
     }));
 
     try {
-      const enrollment = await registerForClassroom({ studentId, classroomId, courseCode });
+      const enrollment = await registerForClassroom({ 
+        studentId, 
+        classroomId, 
+        courseCode,
+        weekday, // Pass specific weekday for conflict checking
+        startTime // Pass specific start time for conflict checking
+      });
       console.log(`[Frontend] Registration successful for course ${courseCode}`);
 
       setEnrollmentList((prev) =>
@@ -334,6 +341,7 @@ export default function ClassroomSelfRegistrationCard({
               state: RegistrationState | undefined;
               progress: number;
               isRegistered: boolean;
+              sameSubjectRegistered: boolean;
               isLoading: boolean;
               buttonDisabled: boolean;
               displayedResources: string[];
@@ -342,10 +350,6 @@ export default function ClassroomSelfRegistrationCard({
 
             prioritizedClassrooms.forEach((classroom) => {
             const enrollment = enrollmentLookup.get(classroom.id);
-            const progress = Math.min(
-              100,
-              classroom.capacity > 0 ? Math.round((classroom.seatsFilled / classroom.capacity) * 100) : 0
-            );
             // Filter out "Major:" resources since buildings are not restricted by major
             const nonMajorResources = classroom.resources.filter((resource) => !/^\s*Major:/i.test(resource));
             const displayedResources = nonMajorResources.slice(0, 4);
@@ -364,13 +368,22 @@ export default function ClassroomSelfRegistrationCard({
 
               // Create a separate card for each course
               filteredCourses.forEach((course) => {
-                const registrationKey = `${classroom.id}-${course.courseCode}`;
+                // Include weekday and startTime in the key to handle multiple sections of same course
+                const registrationKey = `${classroom.id}-${course.courseCode}-${course.weekday}-${course.startTime}`;
                 const state = registrationStates[registrationKey];
                 // Use course-specific registration status from backend (isRegistered flag)
                 // This is the authoritative source for course registration status
                 const isRegistered = course.isRegistered === true;
+                const sameSubjectRegistered = course.sameSubjectRegistered === true;
                 const isLoading = state?.status === 'loading';
-                const buttonDisabled = isRegistered || classroom.isFull || isLoading;
+                // Calculate progress per course (not per classroom)
+                const courseSeatsFilled = course.seatsFilled ?? classroom.seatsFilled;
+                const progress = Math.min(
+                  100,
+                  classroom.capacity > 0 ? Math.round((courseSeatsFilled / classroom.capacity) * 100) : 0
+                );
+                const courseIsFull = course.isFull ?? classroom.isFull;
+                const buttonDisabled = isRegistered || sameSubjectRegistered || courseIsFull || isLoading;
                 
                 courseCards.push({
                   course,
@@ -379,6 +392,7 @@ export default function ClassroomSelfRegistrationCard({
                   state,
                   progress,
                   isRegistered,
+                  sameSubjectRegistered,
                   isLoading,
                   buttonDisabled,
                   displayedResources,
@@ -388,7 +402,7 @@ export default function ClassroomSelfRegistrationCard({
             });
 
             return courseCards.map((cardData, cardIndex) => {
-              const { course, classroom, enrollment, state, progress, isRegistered, isLoading, buttonDisabled, displayedResources, extraResources } = cardData;
+              const { course, classroom, enrollment, state, progress, isRegistered, sameSubjectRegistered, isLoading, buttonDisabled, displayedResources, extraResources } = cardData;
 
             return (
               <Paper
@@ -501,13 +515,13 @@ export default function ClassroomSelfRegistrationCard({
                   <Stack spacing={1.5}>
                     <Stack direction="row" justifyContent="space-between" alignItems="center">
                       <Typography variant="body2" color="text.secondary">
-                        {classroom.seatsFilled} of {classroom.capacity} seats claimed
+                        {course.seatsFilled ?? classroom.seatsFilled} of {classroom.capacity} seats claimed
                       </Typography>
                       <Chip
                         size="small"
-                        color={classroom.isFull ? 'default' : isRegistered ? 'success' : 'primary'}
-                        variant={classroom.isFull ? 'outlined' : 'filled'}
-                        label={classroom.isFull ? 'Full' : isRegistered ? 'Registered' : `${progress}% filled`}
+                        color={(course.isFull ?? classroom.isFull) ? 'default' : isRegistered ? 'success' : 'primary'}
+                        variant={(course.isFull ?? classroom.isFull) ? 'outlined' : 'filled'}
+                        label={(course.isFull ?? classroom.isFull) ? 'Full' : isRegistered ? 'Registered' : `${progress}% filled`}
                         sx={{ fontWeight: 600, textTransform: 'capitalize' }}
                       />
                     </Stack>
@@ -528,6 +542,10 @@ export default function ClassroomSelfRegistrationCard({
                             ? `Reserved on ${formatRegisteredAt(enrollment.registeredAt)}`
                             : 'Registration confirmed'}
                         </Typography>
+                      ) : sameSubjectRegistered ? (
+                        <Typography variant="body2" color="warning.main" fontWeight={600}>
+                          Already registered for {course.courseCode} at a different time
+                        </Typography>
                       ) : (
                         <Typography variant="body2" color="text.secondary">
                             Register for this course to secure your spot.
@@ -535,12 +553,12 @@ export default function ClassroomSelfRegistrationCard({
                       )}
                     </Box>
                     <Button
-                        onClick={() => handleRegistration(classroom.id, course.courseCode)}
+                        onClick={() => handleRegistration(classroom.id, course.courseCode, course.weekday, course.startTime)}
                       disabled={buttonDisabled}
                       variant="contained"
-                      color={isRegistered ? 'success' : 'primary'}
+                      color={isRegistered ? 'success' : sameSubjectRegistered ? 'secondary' : 'primary'}
                     >
-                        {isLoading ? 'Reserving…' : isRegistered ? 'Registered' : 'Register for Course'}
+                        {isLoading ? 'Reserving…' : isRegistered ? 'Registered' : sameSubjectRegistered ? 'Already Enrolled' : 'Register for Course'}
                     </Button>
                   </Stack>
 

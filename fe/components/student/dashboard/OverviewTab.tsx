@@ -26,7 +26,8 @@ import type {
   SemesterRegistration,
   FeePayment,
   ClassroomEnrollment,
-  ClassroomAvailability
+  ClassroomAvailability,
+  Integration
 } from '@/lib/db';
 
 type TimetableEntry = StudentDashboardData['timetable'][0];
@@ -75,7 +76,7 @@ export default function OverviewTab({
   registrationWindows,
   fees,
   classroomEnrollments,
-  availableClassrooms
+  availableClassrooms,
 }: OverviewTabProps) {
   const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const sortedTimetable = [...timetable].sort((a, b) => {
@@ -655,6 +656,7 @@ export default function OverviewTab({
         </Grid>
       </Grid>
 
+
       {/* Classroom Registration */}
       <Grid container spacing={3}>
         <Grid item xs={12}>
@@ -666,6 +668,44 @@ export default function OverviewTab({
           />
         </Grid>
       </Grid>
+      {/* Widgets Section */}
+      {/* {widgets.length > 0 && (
+        <Box
+          sx={{
+            position: 'fixed',
+            bottom: 0,
+            right: 0,
+            zIndex: 1000,
+            width: { xs: '100%', md: '400px' },
+            maxWidth: { xs: '100%', md: '400px' },
+            height: { xs: '600px', md: '800px' },
+            maxHeight: { xs: '600px', md: '800px' },
+            overflow: 'hidden',
+            isolation: 'isolate',
+            pointerEvents: 'none',
+            '& > *': {
+              pointerEvents: 'auto',
+            },
+            '& iframe': {
+              position: 'absolute !important',
+              top: '0 !important',
+              left: '0 !important',
+              right: '0 !important',
+              bottom: '0 !important',
+              width: '100% !important',
+              maxWidth: '100% !important',
+              height: '100% !important',
+              maxHeight: '100% !important',
+              border: 'none !important',
+              display: 'block !important',
+              zIndex: '1 !important',
+              pointerEvents: 'auto',
+            },
+          }}
+          dangerouslySetInnerHTML={{ __html: widgets[0].iframe }}
+        />
+      )} */}
+
     </>
   );
 }
