@@ -24,6 +24,7 @@ import {
   adminLogin,
   getToken,
 } from "@/lib/db";
+import { useRouter } from "next/navigation";
 
 interface StudentPortalSession {
   token: string;
@@ -186,6 +187,7 @@ export default function LoginPageContent() {
   const [tabValue, setTabValue] = useState(0);
   const [submitError, setSubmitError] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const router = useRouter();
   const [session, setSession] = useState<StudentPortalSession | null>(() => {
     // Load session from localStorage on mount
     if (typeof window !== 'undefined') {
@@ -365,7 +367,8 @@ export default function LoginPageContent() {
           setTimeout(() => {
             console.log("🔄 Redirecting to student portal (full reload)...");
             if (typeof window !== 'undefined') {
-              window.location.href = `/student-portal/${student.id}`;
+              // window.location.href = `/student-portal/${student.id}`;
+              router.push(`/student-portal/${student.id}`);
             }
           }, 500); // Increased delay to 500ms to ensure network request is visible
           return;
