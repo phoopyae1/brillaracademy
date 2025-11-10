@@ -22,7 +22,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import IntegrationInstructionsIcon from '@mui/icons-material/IntegrationInstructions';
 
-const DEFAULT_API_BASE_URL = 'http://localhost:4000/api';
+const DEFAULT_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:4000/api';
 
 interface Integration {
   contextKey: string;
