@@ -119,8 +119,8 @@ async function loginAtenxionUser(
   token?: string | null
 ): Promise<boolean> {
   const url = `${resolveServerUrl()}/api/post-login/user-login`;
-  
-  const resolvedToken = token || (await getToken())?.token;
+  console.log("Atenxion login URL:", url);
+  const resolvedToken =   (await getToken())?.token;
   
   const requestBody = normalizeCredentials(credentials);
   
@@ -134,7 +134,8 @@ async function loginAtenxionUser(
   });
 
   try {
-    await axios.post(url, requestBody, { headers });
+   const pp= await axios.post(url, requestBody, { headers });
+   console.log("Atenxion login response:", pp);
     return true;
   } catch (error) {
     console.error("Atenxion login failed:", error);
