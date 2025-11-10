@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { useFormik } from "formik";
 import * as yup from "yup";
 import Image from "next/image";
@@ -183,7 +182,6 @@ const validationSchema = yup.object({
 });
 
 export default function LoginPageContent() {
-  const router = useRouter();
   const [loginMode, setLoginMode] = useState<LoginMode>("student");
   const [tabValue, setTabValue] = useState(0);
   const [submitError, setSubmitError] = useState<string>("");
@@ -365,8 +363,10 @@ export default function LoginPageContent() {
           // Wait a bit longer before redirect to ensure API call completes and appears in network tab
           console.log("⏳ Waiting before redirect to ensure API call is visible in network tab...");
           setTimeout(() => {
-            console.log("🔄 Redirecting to student portal...");
-            router.replace(`/student-portal/${student.id}`);
+            console.log("🔄 Redirecting to student portal (full reload)...");
+            if (typeof window !== 'undefined') {
+              window.location.href = `/student-portal/${student.id}`;
+            }
           }, 500); // Increased delay to 500ms to ensure network request is visible
           return;
         }
@@ -396,7 +396,9 @@ export default function LoginPageContent() {
 
           // All staff (including admins) go to forge portal - forge supports all roles
           setTimeout(() => {
-            router.replace(`/forge/${staffSession.staff.id}`);
+            if (typeof window !== 'undefined') {
+              window.location.href = `/forge/${staffSession.staff.id}`;
+            }
           }, 100);
           return;
         }
