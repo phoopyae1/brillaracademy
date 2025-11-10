@@ -5,11 +5,39 @@ import {
   fallbackSemesterGpa
 } from './fallbackData.js';
 import type { GradeRecord, SemesterGpa, SemesterRegistration } from './types.js';
+import { recordAtenxionTransaction } from './atenxionService.js';
 
 let inMemoryGrades = [...fallbackGrades];
 let nextGradeId = fallbackGrades.length + 1;
 let inMemoryGpa = [...fallbackSemesterGpa];
 let inMemoryRegistrationWindows = [...fallbackRegistrationWindows];
+
+export const GPA_BASE_SCALE = 4;
+export const GPA_TARGET_SCALE = 3;
+export const GPA_SCALE_FACTOR = GPA_TARGET_SCALE / GPA_BASE_SCALE;
+
+const BASE_GRADE_POINTS: Record<string, number> = {
+  'A+': 4.0,
+  'A': 4.0,
+  'A-': 3.7,
+  'B+': 3.3,
+  'B': 3.0,
+  'B-': 2.7,
+  'C+': 2.3,
+  'C': 2.0,
+  'C-': 1.7,
+  'D+': 1.3,
+  'D': 1.0,
+  'D-': 0.7,
+  'F': 0.0
+};
+
+const GRADE_POINT_MAP: Record<string, number> = Object.fromEntries(
+  Object.entries(BASE_GRADE_POINTS).map(([grade, value]) => [
+    grade,
+    Math.round(value * GPA_SCALE_FACTOR * 100) / 100
+  ])
+);
 
 function normalizeGrade(row: any): GradeRecord {
   return {
@@ -229,26 +257,11 @@ export function findCourseOffering(
 }
 
 /**
- * Converts letter grade to grade point (4.0 scale)
+ * Converts letter grade to grade point (3.0 scale, A+ = 3.0)
  */
-function gradeToPoint(grade: string): number {
+export function gradeToPoint(grade: string): number {
   const normalizedGrade = grade.trim().toUpperCase();
-  const gradeMap: Record<string, number> = {
-    'A+': 4.0,
-    'A': 4.0,
-    'A-': 3.7,
-    'B+': 3.3,
-    'B': 3.0,
-    'B-': 2.7,
-    'C+': 2.3,
-    'C': 2.0,
-    'C-': 1.7,
-    'D+': 1.3,
-    'D': 1.0,
-    'D-': 0.7,
-    'F': 0.0
-  };
-  return gradeMap[normalizedGrade] ?? 0.0;
+  return GRADE_POINT_MAP[normalizedGrade] ?? 0.0;
 }
 
 /**
@@ -355,6 +368,9 @@ export async function recordStudentGrade(
       };
       inMemoryGrades[existingIndex] = updated;
       console.log(`[AcademicService] Updated in-memory grade (ID: ${existing.id}, old grade: ${existing.grade} → new grade: ${input.grade})`);
+      void recordAtenxionTransaction(String(input.studentId)).catch((error) =>
+        console.error('[AcademicService] Failed to record Atenxion transaction (in-memory update):', error)
+      );
       return updated;
     } else {
       // Create new grade
@@ -366,6 +382,9 @@ export async function recordStudentGrade(
       };
       inMemoryGrades = [record, ...inMemoryGrades];
       console.log(`[AcademicService] Created new in-memory grade record (ID: ${record.id})`);
+      void recordAtenxionTransaction(String(input.studentId)).catch((error) =>
+        console.error('[AcademicService] Failed to record Atenxion transaction (in-memory create):', error)
+      );
       return record;
     }
   }
@@ -470,6 +489,10 @@ export async function recordStudentGrade(
 
     // Calculate and update GPA for this semester (after insert or update)
     await calculateAndUpdateSemesterGPA(input.studentId, input.semester);
+
+    void recordAtenxionTransaction(String(input.studentId)).catch((error) =>
+      console.error('[AcademicService] Failed to record Atenxion transaction (database):', error)
+    );
 
     return savedGrade;
   } catch (error) {

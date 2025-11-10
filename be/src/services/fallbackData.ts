@@ -2416,25 +2416,25 @@ export const fallbackSemesterGpa: SemesterGpa[] = [
     id: 1,
     studentId: 1,
     semester: 'Fall 2023',
-    gpa: 3.72
+    gpa: 2.79
   },
   {
     id: 2,
     studentId: 1,
     semester: 'Spring 2024',
-    gpa: 3.88
+    gpa: 2.91
   },
   {
     id: 3,
     studentId: 2,
     semester: 'Fall 2023',
-    gpa: 3.65
+    gpa: 2.74
   },
   {
     id: 4,
     studentId: 2,
     semester: 'Spring 2024',
-    gpa: 3.74
+    gpa: 2.81
   }
 ];
 

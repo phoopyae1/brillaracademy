@@ -1,33 +1,11 @@
 import 'dotenv/config';
 import { getPool } from './pool.js';
+import { gradeToPoint } from '../services/academicService.js';
 
 /**
  * Migration script to calculate and create GPA records for all students
  * who have grades but no GPA records in the semester_gpa table
  */
-
-/**
- * Converts letter grade to grade point (4.0 scale)
- */
-function gradeToPoint(grade: string): number {
-  const normalizedGrade = grade.trim().toUpperCase();
-  const gradeMap: Record<string, number> = {
-    'A+': 4.0,
-    'A': 4.0,
-    'A-': 3.7,
-    'B+': 3.3,
-    'B': 3.0,
-    'B-': 2.7,
-    'C+': 2.3,
-    'C': 2.0,
-    'C-': 1.7,
-    'D+': 1.3,
-    'D': 1.0,
-    'D-': 0.7,
-    'F': 0.0
-  };
-  return gradeMap[normalizedGrade] ?? 0.0;
-}
 
 async function calculateGPAForAllStudents() {
   const pool = getPool();

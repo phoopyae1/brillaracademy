@@ -566,12 +566,11 @@ export async function registerForClassroom(input: {
   return data.enrollment;
 }
 
-export async function recordStudentAtenxionTransaction(studentId: number | string, token?: string | null): Promise<void> {
+export async function recordStudentAtenxionTransaction(studentId: number | string): Promise<void> {
   await apiRequest('/atenxion/transaction', {
     method: 'POST',
     body: {
-      studentId: String(studentId),
-      token: token ?? undefined
+      studentId: String(studentId)
     }
   });
 }

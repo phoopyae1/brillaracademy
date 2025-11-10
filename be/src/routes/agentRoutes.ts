@@ -3,8 +3,7 @@ import { getPool } from '../db/pool.js';
 import { fetchStudentById } from '../services/studentService.js';
 import { listAnnouncements } from '../services/announcementService.js';
 import { listStudentAssignments } from '../services/assignmentService.js';
-import { listStudentGrades } from '../services/academicService.js';
-import { registerStudentForClassroom } from '../services/classroomService.js';
+import { gradeToPoint } from '../services/academicService.js';
 import { requireStudent, type AuthenticatedStudentRequest } from '../middleware/requireStudent.js';
 
 const router = Router();
@@ -196,6 +195,229 @@ router.post('/announcements-events', requireStudent(), async (req: Authenticated
 });
 
 /**
+ * POST /api/agent/admission-fees
+ * Get admission fee summary and payment history for a student
+ * Requires authentication via Bearer token
+ * Request body: { studentId: number }
+ */
+router.post('/admission-fees', requireStudent(), async (req: AuthenticatedStudentRequest, res) => {
+  try {
+    const { studentId } = req.body;
+
+    if (!studentId || !Number.isFinite(Number(studentId))) {
+      return res.status(400).json({ error: 'Invalid student ID in request body.' });
+    }
+
+    const id = Number(studentId);
+    const pool = getPool();
+
+    if (!pool) {
+      return res.status(500).json({ error: 'Database connection not available.' });
+    }
+
+    const paymentRows = await (async () => {
+      try {
+        const { rows } = await pool.query(
+          `SELECT 
+         id,
+         student_id AS "studentId",
+         amount,
+         description,
+         status,
+         received_by AS "receivedBy",
+         to_char(received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "receivedAt",
+         to_char(due_date AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "dueDate"
+       FROM fee_payments
+       WHERE student_id = $1
+       ORDER BY received_at DESC NULLS LAST, due_date ASC NULLS LAST`,
+          [id]
+        );
+        return rows;
+      } catch (error: any) {
+        if (error?.code === '42703') {
+          const { rows } = await pool.query(
+            `SELECT 
+               id,
+               student_id AS "studentId",
+               amount,
+               description,
+               status,
+               NULL::INTEGER AS "receivedBy",
+               NULL::TIMESTAMP AS "receivedAt",
+               NULL::TIMESTAMP AS "dueDate"
+             FROM fee_payments
+             WHERE student_id = $1
+             ORDER BY id DESC`,
+            [id]
+          );
+          return rows;
+        }
+        throw error;
+      }
+    })();
+
+    const subjectRows = await (async () => {
+      try {
+        const { rows } = await pool.query(
+          `SELECT 
+             cr.id,
+             cr.class_name AS "className",
+             cr.course_code AS "courseCode",
+             cr.semester,
+             cr.credits,
+             cr.status,
+             cr.confirmed_by AS "confirmedBy",
+             to_char(cr.registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "registeredAt",
+             sa.display_name AS "teacherName"
+           FROM class_registrations cr
+           LEFT JOIN staff_accounts sa ON cr.confirmed_by = sa.id
+           WHERE cr.student_id = $1
+           ORDER BY cr.registered_at DESC`,
+          [id]
+        );
+        return rows;
+      } catch (error: any) {
+        if (error?.code === '42703') {
+          const { rows } = await pool.query(
+            `SELECT 
+               cr.id,
+               cr.class_name AS "className",
+               cr.semester,
+               cr.credits,
+               cr.status,
+               NULL::INTEGER AS "confirmedBy",
+               NULL::TIMESTAMP AS "registeredAt",
+               NULL::TEXT AS "teacherName"
+             FROM class_registrations cr
+             WHERE cr.student_id = $1
+             ORDER BY cr.id DESC`,
+            [id]
+          );
+          return rows;
+        }
+        throw error;
+      }
+    })();
+
+    const subjectFees = subjectRows.map((row: any) => {
+      const credits = Number(row.credits ?? 0);
+      const amount = credits * 100;
+      const label = row.courseCode ?? row.className ?? `Course ${row.id}`;
+
+      return {
+        label,
+        category: 'subject' as const,
+        amount,
+        status: 'unpaid' as 'paid' | 'unpaid'
+      };
+    });
+    const semesters = new Set<string>();
+    subjectRows.forEach((row: any) => {
+      if (row.semester) {
+        semesters.add(row.semester);
+      }
+    });
+
+    const activityStatus = new Map<string, 'paid' | 'unpaid'>();
+    const insuranceStatus = new Map<string, 'paid' | 'unpaid'>();
+    semesters.forEach((semester) => {
+      activityStatus.set(semester, 'unpaid');
+      insuranceStatus.set(semester, 'unpaid');
+    });
+
+    const matchedPaymentIds = new Set<number>();
+
+    paymentRows.forEach((row: any) => {
+      const description = (row.description ?? '').toString();
+      const normalized = description.toLowerCase();
+
+      semesters.forEach((semester) => {
+        const activityTag = `activity fee - ${semester}`.toLowerCase();
+        const insuranceTag = `insurance fee - ${semester}`.toLowerCase();
+
+        if (normalized.includes(activityTag)) {
+          activityStatus.set(semester, row.status === 'paid' ? 'paid' : 'unpaid');
+          matchedPaymentIds.add(row.id);
+        }
+
+        if (normalized.includes(insuranceTag)) {
+          insuranceStatus.set(semester, row.status === 'paid' ? 'paid' : 'unpaid');
+          matchedPaymentIds.add(row.id);
+        }
+
+        const tuitionTag = `tuition fee - ${semester}`.toLowerCase();
+        if (normalized.includes(tuitionTag)) {
+          matchedPaymentIds.add(row.id);
+        }
+      });
+    });
+
+    const activityFees = Array.from(semesters).map((semester) => ({
+      label: `Activity Fee - ${semester}`,
+      category: 'other' as const,
+      amount: 100,
+      status: activityStatus.get(semester) ?? 'unpaid'
+    }));
+
+    const insuranceFees = Array.from(semesters).map((semester) => ({
+      label: `Health Insurance - ${semester}`,
+      category: 'other' as const,
+      amount: 100,
+      status: insuranceStatus.get(semester) ?? 'unpaid'
+    }));
+
+    const otherFees = paymentRows
+      .filter((row: any) => !matchedPaymentIds.has(row.id))
+      .map((row: any) => {
+        const description = (row.description ?? '').toString().trim();
+        const label = description || 'Other Fee';
+
+        return {
+          label,
+          category: 'other' as const,
+          amount: Math.abs(Number(row.amount)),
+          status: row.status === 'paid' ? 'paid' : 'unpaid'
+        };
+      });
+
+    const totalPaid = paymentRows
+      .filter((row: any) => row.status === 'paid')
+      .reduce((sum: number, row: any) => sum + Math.abs(Number(row.amount)), 0);
+
+    const paidOtherFeeTotal = otherFees
+      .filter((fee) => fee.status === 'paid')
+      .reduce((sum, fee) => sum + fee.amount, 0);
+
+    let remainingPaid = Math.max(totalPaid - paidOtherFeeTotal, 0);
+
+    const applyPaymentStatus = (
+      fees: Array<{ label: string; category: 'subject' | 'other'; amount: number; status: 'paid' | 'unpaid' }>
+    ) =>
+      fees.map((fee) => {
+        if (remainingPaid >= fee.amount) {
+          remainingPaid -= fee.amount;
+          return { ...fee, status: 'paid' as const };
+        }
+        return { ...fee, status: 'unpaid' as const };
+      });
+
+    const activityFeesWithStatus = applyPaymentStatus(activityFees);
+    const insuranceFeesWithStatus = applyPaymentStatus(insuranceFees);
+    const subjectFeesWithStatus = applyPaymentStatus(subjectFees);
+
+    return res.json([
+      ...subjectFeesWithStatus,
+      ...activityFeesWithStatus,
+      ...insuranceFeesWithStatus,
+      ...otherFees
+    ]);
+  } catch (error) {
+    console.error('[Agent] Error fetching admission fees:', error);
+    return res.status(500).json({ error: 'Failed to fetch admission fees.' });
+  }
+});
+
+/**
  * POST /api/agent/assignments
  * Get student's assignments
  * Requires authentication via Bearer token
@@ -278,9 +500,16 @@ router.post('/grades', requireStudent(), async (req: AuthenticatedStudentRequest
       [id]
     );
 
-    // Return flat response - direct array of grade objects (no nesting)
-    return res.json(
-      rows.map((row: any) => ({
+    const totalCredits = rows.reduce((sum: number, row: any) => sum + Number(row.credits ?? 0), 0);
+    const totalPoints = rows.reduce(
+      (sum: number, row: any) => sum + gradeToPoint(row.grade) * Number(row.credits ?? 0),
+      0
+    );
+    const totalGpa =
+      totalCredits > 0 ? Math.round((totalPoints / totalCredits) * 100) / 100 : null;
+
+    return res.json({
+      grades: rows.map((row: any) => ({
         id: row.id,
         studentId: row.studentId,
         courseCode: row.courseCode,
@@ -291,8 +520,10 @@ router.post('/grades', requireStudent(), async (req: AuthenticatedStudentRequest
         recordedBy: row.recordedBy || null,
         teacherName: row.teacherName || null,
         recordedAt: row.recordedAt || null
-      }))
-    );
+      })),
+      totalGpa,
+      totalCredits
+    });
   } catch (error) {
     console.error('[Agent] Error fetching grades:', error);
     return res.status(500).json({ error: 'Failed to fetch grades.' });
@@ -402,29 +633,9 @@ router.post('/register-course', requireStudent(), async (req: AuthenticatedStude
 
     // Register student for the course with specific weekday and time
     // This ensures conflict checking uses the correct time slot, not just any slot for the course
-    const enrollment = await registerStudentForClassroom(
-      id,
-      course.classroom_id,
-      courseCode.trim(),
-      course.weekday, // Pass the specific weekday we're registering for
-      course.start_time // Pass the specific start time we're registering for
-    );
-
-    // Return flat response - direct object (no nesting)
-    return res.status(201).json({
-      id: enrollment.id,
-      studentId: enrollment.studentId,
-      classroomId: enrollment.classroomId,
-      courseCode: courseCode.trim(),
-      courseTitle: course.course_title,
-      major: course.major_focus,
-      weekday: course.weekday,
-      startTime: course.start_time,
-      endTime: course.end_time,
-      teacherId: course.teacher_id,
-      teacherName: course.teacher_name || null,
-      status: enrollment.status,
-      registeredAt: enrollment.registeredAt
+    return res.status(409).json({
+      error:
+        'Teacher assignments do not reserve seats automatically. Please ask the student to confirm via the portal.'
     });
   } catch (error: any) {
     const message = typeof error?.message === 'string' ? error.message : 'Unable to register for this course right now.';

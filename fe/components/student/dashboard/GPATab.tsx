@@ -24,6 +24,12 @@ import type { SemesterGpa, GradeRecord } from '@/lib/db';
 
 type GPABySemester = SemesterGpa;
 
+const GPA_MAX = 3;
+const GPA_SCALE_FACTOR = GPA_MAX / 4;
+const GPA_THRESHOLD_EXCELLENT = Math.round(3.5 * GPA_SCALE_FACTOR * 100) / 100; // ≈ 2.63
+const GPA_THRESHOLD_GOOD = Math.round(3.0 * GPA_SCALE_FACTOR * 100) / 100; // 2.25
+const GPA_THRESHOLD_FAIR = Math.round(2.5 * GPA_SCALE_FACTOR * 100) / 100; // ≈ 1.88
+
 interface GPATabProps {
   gpaBySemester: GPABySemester[];
   grades: GradeRecord[];
@@ -90,23 +96,23 @@ export default function GPATab({ gpaBySemester, grades }: GPATabProps) {
 
   // Get GPA color based on value
   const getGPAColor = (gpa: number) => {
-    if (gpa >= 3.5) return 'success';
-    if (gpa >= 3.0) return 'primary';
-    if (gpa >= 2.5) return 'warning';
+    if (gpa >= GPA_THRESHOLD_EXCELLENT) return 'success';
+    if (gpa >= GPA_THRESHOLD_GOOD) return 'primary';
+    if (gpa >= GPA_THRESHOLD_FAIR) return 'warning';
     return 'error';
   };
 
   // Get GPA label
   const getGPALabel = (gpa: number) => {
-    if (gpa >= 3.5) return 'Excellent';
-    if (gpa >= 3.0) return 'Good';
-    if (gpa >= 2.5) return 'Fair';
+    if (gpa >= GPA_THRESHOLD_EXCELLENT) return 'Excellent';
+    if (gpa >= GPA_THRESHOLD_GOOD) return 'Good';
+    if (gpa >= GPA_THRESHOLD_FAIR) return 'Fair';
     return 'Needs Improvement';
   };
 
-  // Calculate progress percentage (assuming 4.0 scale)
+  // Calculate progress percentage (assuming 3.0 scale)
   const getGPAProgress = (gpa: number) => {
-    return (gpa / 4.0) * 100;
+    return (gpa / GPA_MAX) * 100;
   };
 
   return (
@@ -163,7 +169,14 @@ export default function GPATab({ gpaBySemester, grades }: GPATabProps) {
                       borderRadius: 4,
                       backgroundColor: 'rgba(63, 136, 197, 0.1)',
                       '& .MuiLinearProgress-bar': {
-                        backgroundColor: averageGpa >= 3.5 ? '#4caf50' : averageGpa >= 3.0 ? '#3F88C5' : averageGpa >= 2.5 ? '#ff9800' : '#f44336'
+                        backgroundColor:
+                          averageGpa >= GPA_THRESHOLD_EXCELLENT
+                            ? '#4caf50'
+                            : averageGpa >= GPA_THRESHOLD_GOOD
+                              ? '#3F88C5'
+                              : averageGpa >= GPA_THRESHOLD_FAIR
+                                ? '#ff9800'
+                                : '#f44336'
                       }
                     }}
                   />
@@ -328,11 +341,11 @@ export default function GPATab({ gpaBySemester, grades }: GPATabProps) {
                               backgroundColor: 'rgba(63, 136, 197, 0.1)',
                               '& .MuiLinearProgress-bar': {
                                 backgroundColor:
-                                  item.gpa >= 3.5
+                                  item.gpa >= GPA_THRESHOLD_EXCELLENT
                                     ? '#4caf50'
-                                    : item.gpa >= 3.0
+                                    : item.gpa >= GPA_THRESHOLD_GOOD
                                       ? '#3F88C5'
-                                      : item.gpa >= 2.5
+                                      : item.gpa >= GPA_THRESHOLD_FAIR
                                         ? '#ff9800'
                                         : '#f44336'
                               }
@@ -423,10 +436,10 @@ export default function GPATab({ gpaBySemester, grades }: GPATabProps) {
             GPA Scale Reference
           </Typography>
           <Stack direction="row" spacing={3} flexWrap="wrap">
-            <Chip label="4.0 - 3.5: Excellent" color="success" variant="outlined" size="small" />
-            <Chip label="3.4 - 3.0: Good" color="primary" variant="outlined" size="small" />
-            <Chip label="2.9 - 2.5: Fair" color="warning" variant="outlined" size="small" />
-            <Chip label="Below 2.5: Needs Improvement" color="error" variant="outlined" size="small" />
+            <Chip label="3.0 - 2.6: Excellent" color="success" variant="outlined" size="small" />
+            <Chip label="2.5 - 2.3: Good" color="primary" variant="outlined" size="small" />
+            <Chip label="2.2 - 1.9: Fair" color="warning" variant="outlined" size="small" />
+            <Chip label="Below 1.9: Needs Improvement" color="error" variant="outlined" size="small" />
           </Stack>
         </Stack>
       </Paper>

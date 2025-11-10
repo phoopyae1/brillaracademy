@@ -649,7 +649,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
           // Calculate all fees and combine into a single payment
           const tuitionFeeAmount = totalCredits > 0 ? totalCredits * 100 : 0;
           const activityFeeAmount = 100;
-          const insuranceFeeAmount = 90;
+          const insuranceFeeAmount = 100;
           const totalFeeAmount = tuitionFeeAmount + activityFeeAmount + insuranceFeeAmount;
 
           // Build description with all fee components
@@ -662,39 +662,75 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
           
           const combinedFeeDescription = feeComponents.join('; ');
 
-          // Check if a combined fee already exists for this student and semester
-          const existingCombinedFee = await pool.query(
-            `SELECT id, amount, description FROM fee_payments 
-             WHERE student_id = $1 
-             AND description LIKE $2
-             AND status = 'pending'`,
+          const paidForSemesterResult = await pool.query(
+            `SELECT COALESCE(SUM(amount), 0) AS total_paid
+             FROM fee_payments
+             WHERE student_id = $1
+               AND description LIKE $2
+               AND status = 'paid'`,
             [studentId, `%${semester}%`]
           );
 
-          if (existingCombinedFee.rows.length === 0) {
-            // Create new combined fee payment
+          const totalPaidForSemester = Number(paidForSemesterResult.rows[0]?.total_paid ?? 0);
+          const outstandingAmount = Math.max(totalFeeAmount - totalPaidForSemester, 0);
+
+          const existingPendingFees = await pool.query(
+            `SELECT id FROM fee_payments 
+             WHERE student_id = $1 
+               AND description LIKE $2
+               AND status = 'pending'
+             ORDER BY id ASC`,
+            [studentId, `%${semester}%`]
+          );
+
+          if (outstandingAmount <= 0) {
+            if (existingPendingFees.rows.length > 0) {
+              const idsToDelete = existingPendingFees.rows.map((row: any) => row.id);
+              await pool.query(
+                `DELETE FROM fee_payments WHERE id = ANY($1::int[])`,
+                [idsToDelete]
+              );
+              console.log(`[StudentService] Removed pending semester fees for ${semester}; outstanding balance settled.`);
+              updatedFees = await listStudentFeePayments(studentId);
+            }
+            continue;
+          }
+
+          if (existingPendingFees.rows.length === 0) {
             await pool.query(
               `INSERT INTO fee_payments (student_id, amount, description, status, due_date)
                VALUES ($1, $2, $3, 'pending', $4)`,
-              [studentId, totalFeeAmount, combinedFeeDescription, 'pending', feeDueDate.toISOString()]
+              [studentId, outstandingAmount, combinedFeeDescription, feeDueDate.toISOString()]
             );
-            console.log(`[StudentService] Created combined fee payment: ${totalFeeAmount} SGD for ${semester} (Tuition: ${tuitionFeeAmount}, Activity: ${activityFeeAmount}, Insurance: ${insuranceFeeAmount})`);
+            console.log(
+              `[StudentService] Created outstanding fee ${outstandingAmount} SGD for ${semester} (Tuition: ${tuitionFeeAmount}, Activity: ${activityFeeAmount}, Insurance: ${insuranceFeeAmount}, Paid: ${totalPaidForSemester})`
+            );
             updatedFees = await listStudentFeePayments(studentId);
           } else {
-            // Update existing combined fee if amount has changed
-            const existingFee = existingCombinedFee.rows[0];
-            const existingAmount = Number(existingFee.amount);
-            
-            if (existingAmount !== totalFeeAmount) {
+            const [primaryPending, ...extraPending] = existingPendingFees.rows;
+
+            await pool.query(
+              `UPDATE fee_payments
+                 SET amount = $1,
+                     description = $2,
+                     status = 'pending',
+                     due_date = $3
+               WHERE id = $4`,
+              [outstandingAmount, combinedFeeDescription, feeDueDate.toISOString(), primaryPending.id]
+            );
+
+            if (extraPending.length > 0) {
+              const idsToDelete = extraPending.map((row: any) => row.id);
               await pool.query(
-                `UPDATE fee_payments SET amount = $1, description = $2 WHERE id = $3`,
-                [totalFeeAmount, combinedFeeDescription, existingFee.id]
+                `DELETE FROM fee_payments WHERE id = ANY($1::int[])`,
+                [idsToDelete]
               );
-              console.log(`[StudentService] Updated combined fee payment from ${existingAmount} to ${totalFeeAmount} SGD for ${semester}`);
-              updatedFees = await listStudentFeePayments(studentId);
-            } else {
-              console.log(`[StudentService] Combined fee payment already exists for ${semester} with correct amount: ${totalFeeAmount} SGD`);
             }
+
+            console.log(
+              `[StudentService] Updated outstanding fee to ${outstandingAmount} SGD for ${semester} (Paid: ${totalPaidForSemester})`
+            );
+            updatedFees = await listStudentFeePayments(studentId);
           }
         }
       } catch (error) {

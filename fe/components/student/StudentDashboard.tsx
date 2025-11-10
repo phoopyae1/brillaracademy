@@ -65,7 +65,7 @@ const navItems: Array<{ id: TabId; label: string; icon: React.ReactNode }> = [
   { id: 'courses', label: 'Courses', icon: <SchoolRoundedIcon fontSize="small" /> },
   { id: 'planning', label: 'Planning', icon: <EventNoteRoundedIcon fontSize="small" /> },
   { id: 'statistics', label: 'Statistics', icon: <QueryStatsRoundedIcon fontSize="small" /> },
-  { id: 'gpa', label: 'GPA', icon: <GradeIcon fontSize="small" /> },
+  // { id: 'gpa', label: 'GPA', icon: <GradeIcon fontSize="small" /> },
   { id: 'assignments', label: 'Assignments', icon: <AssignmentIcon fontSize="small" /> },
   { id: 'messages', label: 'Messages', icon: <MailRoundedIcon fontSize="small" /> }
 ];
@@ -198,8 +198,8 @@ export default function StudentDashboard({
         return <PlanningTab schedule={schedule} registrationWindows={registrationWindows} timetable={timetable} />;
       case 'statistics':
         return <StatisticsTab grades={grades} gpaBySemester={gpaBySemester} registrations={registrations} />;
-      case 'gpa':
-        return <GPATab gpaBySemester={gpaBySemester} grades={grades} />;
+      // case 'gpa':
+      //   return <GPATab gpaBySemester={gpaBySemester} grades={grades} />;
       case 'assignments':
         return <AssignmentsTab assignments={assignments} />;
       case 'messages':

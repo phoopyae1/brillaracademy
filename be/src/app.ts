@@ -41,6 +41,7 @@ export function createApp() {
   app.use('/api/integration', integrationRoutes);
   app.use('/api/agent', agentRoutes);
   app.use('/api/atenxion', atenxionRoutes);
+  // app.use('/api/atenxion', atenxionRoutes);
 
   return app;
 }

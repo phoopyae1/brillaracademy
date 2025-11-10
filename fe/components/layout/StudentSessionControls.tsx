@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Button from '@mui/material/Button';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
@@ -15,71 +15,75 @@ type StudentSessionControlsProps = {
 
 export default function StudentSessionControls({ isLoggedIn: isLoggedInProp, studentName: studentNameProp }: StudentSessionControlsProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const [isStaffLoggedIn, setIsStaffLoggedIn] = useState(false);
-  const [isStudentLoggedIn, setIsStudentLoggedIn] = useState(isLoggedInProp);
-  const [studentName, setStudentName] = useState(studentNameProp);
   const [isHydrated, setIsHydrated] = useState(false);
 
-  // Function to check and update student login status
-  // Only updates if client-side check finds different value than server props
-  const checkStudentLoginStatus = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    
-    // Check student session from cookies and localStorage
-    const studentIdCookie = document.cookie.split('; ').find((row) => row.startsWith('brillar_student_id='));
-    const studentNameCookie = document.cookie.split('; ').find((row) => row.startsWith('brillar_student_name='));
-    const studentSession = localStorage.getItem('student_portal');
+  const readClientSession = useCallback((): { isLoggedIn: boolean; studentName?: string } => {
+    if (typeof window === 'undefined') {
+      return { isLoggedIn: isLoggedInProp, studentName: studentNameProp };
+    }
+
+    const cookieString = document.cookie ?? '';
+    const cookies = cookieString ? cookieString.split('; ') : [];
+    const studentIdCookie = cookies.find((row) => row.startsWith('brillar_student_id='));
+    const studentNameCookie = cookies.find((row) => row.startsWith('brillar_student_name='));
+    const studentSession = window.localStorage?.getItem('student_portal') ?? null;
     
     const hasStudentId = Boolean(studentIdCookie);
     const hasStudentSession = Boolean(studentSession);
-    const clientIsLoggedIn = hasStudentId || hasStudentSession;
+    const isLoggedIn = hasStudentId || hasStudentSession;
     
-    // Only update if client check finds different value than current state
-    // This prevents overriding server state unnecessarily
-    setIsStudentLoggedIn((prev) => {
-      if (prev !== clientIsLoggedIn) {
-        console.log(`[StudentSessionControls] Login status changed: ${prev} -> ${clientIsLoggedIn} (client check)`);
-        return clientIsLoggedIn;
-      }
-      return prev;
-    });
-    
-    // Get student name from cookie or localStorage
-    let newStudentName: string | undefined;
+    let resolvedName: string | undefined;
+
     if (studentNameCookie) {
       try {
-        newStudentName = decodeURIComponent(studentNameCookie.split('=')[1]);
-      } catch (e) {
-        // Ignore decode errors
+        resolvedName = decodeURIComponent(studentNameCookie.split('=')[1]);
+      } catch {
+        // ignore decode errors
       }
-    } else if (studentSession) {
+    }
+
+    if (!resolvedName && studentSession) {
       try {
         const session = JSON.parse(studentSession);
-        if (session.studentName) {
-          newStudentName = session.studentName;
+        if (session?.studentName) {
+          resolvedName = session.studentName;
         }
-      } catch (e) {
-        // Ignore parse errors
+      } catch {
+        // ignore parse errors
       }
     }
     
-    // Update name if different and we have a value
-    if (newStudentName) {
-      setStudentName((prev) => {
-        if (prev !== newStudentName) {
-          return newStudentName;
-        }
-        return prev;
-      });
+    return { isLoggedIn, studentName: resolvedName };
+  }, [isLoggedInProp, studentNameProp]);
+
+  const [{ isLoggedIn: isStudentLoggedIn, studentName }, setStudentState] = useState(() => {
+    if (typeof window === 'undefined') {
+      return { isLoggedIn: isLoggedInProp, studentName: studentNameProp };
     }
-  }, []);
+    return readClientSession();
+  });
+
+  const synchroniseSession = useCallback(() => {
+    const next = readClientSession();
+    setStudentState((prev) => {
+      if (prev.isLoggedIn === next.isLoggedIn && prev.studentName === next.studentName) {
+        return prev;
+      }
+      console.log('[StudentSessionControls] Updated from client session', next);
+      return next;
+      });
+  }, [readClientSession]);
 
   // Sync with server props when they change (e.g., after navigation)
   useEffect(() => {
-    setIsStudentLoggedIn(isLoggedInProp);
-    if (studentNameProp) {
-      setStudentName(studentNameProp);
-    }
+    setStudentState((prev) => {
+      if (prev.isLoggedIn === isLoggedInProp && prev.studentName === studentNameProp) {
+        return prev;
+      }
+      return { isLoggedIn: isLoggedInProp, studentName: studentNameProp };
+    });
   }, [isLoggedInProp, studentNameProp]);
 
   // Check for student and staff session on client side (for proper hydration and refresh handling)
@@ -92,25 +96,38 @@ export default function StudentSessionControls({ isLoggedIn: isLoggedInProp, stu
       const staffSession = window.sessionStorage.getItem('brillar_staff_session');
       setIsStaffLoggedIn(Boolean(staffSession));
       
-      // Check student login status after a brief delay
-      // Always check, but only update if there's a discrepancy (client finds cookies when server didn't)
-      const timeoutId = setTimeout(() => {
-        checkStudentLoginStatus();
-      }, 50);
-      
-      // Listen for storage changes to update login status (for cross-tab updates)
+      synchroniseSession();
+
       const handleStorageChange = () => {
-        checkStudentLoginStatus();
+        synchroniseSession();
+      };
+
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+          synchroniseSession();
+        }
+      };
+
+      const handleFocus = () => {
+        synchroniseSession();
       };
       
       window.addEventListener('storage', handleStorageChange);
+      window.addEventListener('focus', handleFocus);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
       
       return () => {
-        clearTimeout(timeoutId);
         window.removeEventListener('storage', handleStorageChange);
+        window.removeEventListener('focus', handleFocus);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
       };
     }
-  }, [checkStudentLoginStatus]);
+  }, [synchroniseSession]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    synchroniseSession();
+  }, [pathname, isHydrated, synchroniseSession]);
 
   const handleLogout = useCallback(async () => {
     if (typeof window === 'undefined') return;
@@ -226,14 +243,17 @@ export default function StudentSessionControls({ isLoggedIn: isLoggedInProp, stu
     console.log('After logout - sessionStorage keys:', Object.keys(window.sessionStorage));
     
     // Update state immediately to reflect logout
-    setIsStudentLoggedIn(false);
-    setStudentName(undefined);
+    setStudentState({ isLoggedIn: false, studentName: undefined });
     
     // Use Next.js router to navigate to login page
     router.push('/login');
     // Refresh to ensure server-side state is updated
     router.refresh();
-  }, [router, checkStudentLoginStatus]);
+  }, [router, synchroniseSession]);
+
+  if (!isHydrated) {
+    return null;
+  }
 
   // Hide login button if student or staff is logged in
   if (!isStudentLoggedIn && !isStaffLoggedIn) {

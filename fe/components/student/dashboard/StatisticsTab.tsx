@@ -20,6 +20,11 @@ type Grade = GradeRecord;
 type GPABySemester = SemesterGpa;
 type ClassRegistration = StudentDashboardData['registrations'][0];
 
+const GPA_MAX = 3;
+const GPA_THRESHOLD_EXCELLENT = Math.round(3.5 * (GPA_MAX / 4) * 100) / 100;
+const GPA_THRESHOLD_GOOD = Math.round(3.0 * (GPA_MAX / 4) * 100) / 100;
+const GPA_THRESHOLD_FAIR = Math.round(2.5 * (GPA_MAX / 4) * 100) / 100;
+
 interface StatisticsTabProps {
   grades: Grade[];
   gpaBySemester: GPABySemester[];
@@ -165,9 +170,21 @@ export default function StatisticsTab({ grades, gpaBySemester, registrations }: 
               <TableBody>
                 {sortedGpa.map((item) => {
                   const performance =
-                    item.gpa >= 3.5 ? 'Excellent' : item.gpa >= 3.0 ? 'Good' : item.gpa >= 2.5 ? 'Fair' : 'Needs Improvement';
+                    item.gpa >= GPA_THRESHOLD_EXCELLENT
+                      ? 'Excellent'
+                      : item.gpa >= GPA_THRESHOLD_GOOD
+                        ? 'Good'
+                        : item.gpa >= GPA_THRESHOLD_FAIR
+                          ? 'Fair'
+                          : 'Needs Improvement';
                   const color =
-                    item.gpa >= 3.5 ? 'success' : item.gpa >= 3.0 ? 'primary' : item.gpa >= 2.5 ? 'warning' : 'error';
+                    item.gpa >= GPA_THRESHOLD_EXCELLENT
+                      ? 'success'
+                      : item.gpa >= GPA_THRESHOLD_GOOD
+                        ? 'primary'
+                        : item.gpa >= GPA_THRESHOLD_FAIR
+                          ? 'warning'
+                          : 'error';
 
                   return (
                     <TableRow key={item.id}>
