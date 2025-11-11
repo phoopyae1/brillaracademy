@@ -368,8 +368,8 @@ export default function LoginPageContent() {
           setTimeout(() => {
             console.log("🔄 Redirecting to student portal (full reload)...");
             if (typeof window !== 'undefined') {
-              // window.location.href = `/student-portal/${student.id}`;
-              router.push(`/student-portal/${student.id}`);
+              window.location.href = `/student-portal/${student.id}`;
+              // router.push(`/student-portal/${student.id}`);
             }
           }, 500); // Increased delay to 500ms to ensure network request is visible
           return;
