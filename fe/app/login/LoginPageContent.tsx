@@ -46,7 +46,7 @@ type AtenxionRequestBody = {
   // studentName: string;
   studentId: string;
   agentId?: string;
-  agentchainId?: string;
+  // agentchainId?: string;
   Authorization?: string;
 };
 
