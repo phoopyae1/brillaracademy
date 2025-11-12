@@ -375,13 +375,16 @@ export async function assignTeacherToClassroom(
 
     const assignment = normalizeAssignment(rows[0]);
 
-    // Auto-enroll students with matching majors
-    try {
-      await enrollStudentsInAssignment(assignment, input, pool, assignedBy);
-    } catch (enrollmentError) {
-      console.error('Failed to auto-enroll students for teaching assignment', enrollmentError);
-      // Don't fail the whole operation if enrollment fails
-    }
+    // NOTE: Auto-enrollment disabled - students must register via the portal
+    // Teacher assignments do not automatically register students
+    // Students need to confirm their registration through the student portal
+    // If you need to enroll students, use the syncEnrollmentsForAssignment function explicitly
+    // try {
+    //   await enrollStudentsInAssignment(assignment, input, pool, assignedBy);
+    // } catch (enrollmentError) {
+    //   console.error('Failed to auto-enroll students for teaching assignment', enrollmentError);
+    //   // Don't fail the whole operation if enrollment fails
+    // }
 
     return assignment;
   } catch (error) {
