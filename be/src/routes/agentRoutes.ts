@@ -5,6 +5,7 @@ import { listAnnouncements } from '../services/announcementService.js';
 import { listStudentAssignments } from '../services/assignmentService.js';
 import { gradeToPoint } from '../services/academicService.js';
 import { requireStudent, type AuthenticatedStudentRequest } from '../middleware/requireStudent.js';
+import { registerStudentForClassroom } from '../services/classroomService.js';
 
 function formatTimeToSingapore(time: string | null | undefined): string | null {
   if (!time) {
@@ -749,22 +750,50 @@ router.post('/register-course', requireStudent(), async (req: AuthenticatedStude
       });
     }
 
-    return res.status(200).json({
-      message: 'Course slot validated. Please ask the student to confirm via the portal.',
-      course: {
-        courseCode: course.course_code,
-        courseTitle: course.course_title,
-        majorFocus: course.major_focus,
-        weekday: course.weekday,
-        startTime: course.start_time,
-        endTime: course.end_time,
-        teacherName: course.teacher_name,
-        classroomId: course.classroom_id,
-        startTimeSingapore: formatTimeToSingapore(course.start_time),
-        endTimeSingapore: formatTimeToSingapore(course.end_time)
-      },
-      generatedAtSingapore: formatDateTimeToSingapore(new Date().toISOString())
-    });
+    // Register the student for the course
+    try {
+      const enrollment = await registerStudentForClassroom(
+        id,
+        course.classroom_id,
+        courseCode.trim(),
+        course.weekday,
+        course.start_time
+      );
+
+      return res.status(200).json({
+        message: 'Student successfully registered for the course.',
+        enrollment: {
+          id: enrollment.id,
+          studentId: enrollment.studentId,
+          classroomId: enrollment.classroomId,
+          status: enrollment.status,
+          registeredAt: enrollment.registeredAt
+        },
+        course: {
+          courseCode: course.course_code,
+          courseTitle: course.course_title,
+          majorFocus: course.major_focus,
+          weekday: course.weekday,
+          startTime: course.start_time,
+          endTime: course.end_time,
+          teacherName: course.teacher_name,
+          classroomId: course.classroom_id,
+          startTimeSingapore: formatTimeToSingapore(course.start_time),
+          endTimeSingapore: formatTimeToSingapore(course.end_time)
+        },
+        generatedAtSingapore: formatDateTimeToSingapore(new Date().toISOString())
+      });
+    } catch (registrationError: any) {
+      // If registration fails (e.g., schedule conflict), return the error
+      const errorMessage = registrationError?.message || 'Failed to register student for course.';
+      console.error('[Agent] Registration error:', registrationError);
+
+      if (errorMessage.includes('SCHEDULE_CONFLICT') || errorMessage.includes('already registered')) {
+        return res.status(409).json({ error: errorMessage });
+      }
+
+      return res.status(400).json({ error: errorMessage });
+    }
   } catch (error: any) {
     const message = typeof error?.message === 'string' ? error.message : 'Unable to register for this course right now.';
     console.error('[Agent] Error registering for course:', error);
