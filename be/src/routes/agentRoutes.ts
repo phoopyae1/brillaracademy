@@ -6,6 +6,7 @@ import { listStudentAssignments } from '../services/assignmentService.js';
 import { gradeToPoint } from '../services/academicService.js';
 import { requireStudent, type AuthenticatedStudentRequest } from '../middleware/requireStudent.js';
 import { registerStudentForClassroom } from '../services/classroomService.js';
+import { getCurrentSemester } from '../services/systemService.js';
 
 function formatTimeToSingapore(time: string | null | undefined): string | null {
   if (!time) {
@@ -177,9 +178,11 @@ router.post('/student-registrations', requireStudent(), async (req: Authenticate
     });
 
     const generatedAt = formatDateTimeToSingapore(new Date().toISOString());
+    const currentSemester = await getCurrentSemester();
 
     return res.json({
       generatedAtSingapore: generatedAt,
+      currentSemester: currentSemester,
       registrations: detailedRegistrations
     });
   } catch (error) {
