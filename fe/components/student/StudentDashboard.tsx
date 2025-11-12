@@ -52,7 +52,7 @@ import GPATab from './dashboard/GPATab';
 import MessagesTab from './dashboard/MessagesTab';
 import AssignmentsTab from './dashboard/AssignmentsTab';
 
-type TabId = 'overview' | 'courses' | 'planning' | 'statistics' | 'gpa' | 'messages' | 'assignments';
+type TabId = 'overview' | 'courses' | 'planning' | 'gpa' | 'messages' | 'assignments';
 
 interface StudentDashboardProps {
   dashboard: StudentDashboardData;
@@ -64,7 +64,7 @@ const navItems: Array<{ id: TabId; label: string; icon: React.ReactNode }> = [
   { id: 'overview', label: 'Overview', icon: <DashboardRoundedIcon fontSize="small" /> },
   { id: 'courses', label: 'Courses', icon: <SchoolRoundedIcon fontSize="small" /> },
   { id: 'planning', label: 'Planning', icon: <EventNoteRoundedIcon fontSize="small" /> },
-  { id: 'statistics', label: 'Statistics', icon: <QueryStatsRoundedIcon fontSize="small" /> },
+  { id: 'gpa', label: 'GPA', icon: <QueryStatsRoundedIcon fontSize="small" /> },
   // { id: 'gpa', label: 'GPA', icon: <GradeIcon fontSize="small" /> },
   { id: 'assignments', label: 'Assignments', icon: <AssignmentIcon fontSize="small" /> },
   { id: 'messages', label: 'Messages', icon: <MailRoundedIcon fontSize="small" /> }
@@ -196,7 +196,7 @@ export default function StudentDashboard({
         return <CoursesTab registrations={registrations} timetable={timetable} fees={fees} />;
       case 'planning':
         return <PlanningTab schedule={schedule} registrationWindows={registrationWindows} timetable={timetable} />;
-      case 'statistics':
+      case 'gpa':
         return <StatisticsTab grades={grades} gpaBySemester={gpaBySemester} registrations={registrations} />;
       // case 'gpa':
       //   return <GPATab gpaBySemester={gpaBySemester} grades={grades} />;

@@ -1101,7 +1101,7 @@ export async function registerStudentForClassroom(
         }
 
         // Check if student is already registered for this course code (same subject)
-        // Students CANNOT register for the same course code twice, even at different times
+        // Students CANNOT register for the same course code twice, even at different times or with different teachers
         // First, get all time slots for this course code
         const allSlotsForCourse = await pool.query(
           `SELECT ta.course_title, ta.weekday, 
@@ -1111,6 +1111,38 @@ export async function registerStudentForClassroom(
            WHERE ta.course_code = $1 AND ta.teacher_id = $2`,
           [courseCode, teacherId]
         );
+
+        // Hard stop: if the student already has ANY roster entry for this course code, block re-registration
+        const { rows: existingCourseCodeEntries } = await pool.query(
+          `SELECT tr.id,
+                  tr.teacher_id,
+                  ta.weekday,
+                  to_char(ta.start_time, 'HH24:MI') AS start_time,
+                  to_char(ta.end_time, 'HH24:MI') AS end_time
+           FROM teacher_rosters tr
+           LEFT JOIN teaching_assignments ta
+             ON ta.course_code = tr.course_code
+            AND ta.teacher_id = tr.teacher_id
+           WHERE tr.student_id = $1
+             AND tr.course_code = $2
+           LIMIT 5`,
+          [studentId, courseCode]
+        );
+
+        if (existingCourseCodeEntries.length > 0) {
+          const existingSlot = existingCourseCodeEntries[0];
+          const existingDay = existingSlot?.weekday;
+          const existingStart = existingSlot?.start_time;
+          const existingEnd = existingSlot?.end_time;
+          const existingSummary =
+            existingDay && existingStart
+              ? `${existingDay} (${existingStart}${existingEnd ? `-${existingEnd}` : ''})`
+              : 'a previously confirmed time slot';
+
+          throw new Error(
+            `You are already registered for "${courseTitle}" (${courseCode}). Existing slot: ${existingSummary}.`
+          );
+        }
 
         console.log(`[ClassroomService] ======================================`);
         console.log(`[ClassroomService] DUPLICATE CHECK for ${courseCode} (${courseTitle})`);
@@ -1802,73 +1834,83 @@ export async function registerStudentForClassroom(
         // Create class registration for this course
         // Check if class registration already exists (by course title, but also verify course_code if available)
         const existingRegistration = await client.query(
-          `SELECT id FROM class_registrations WHERE student_id = $1 AND class_name = $2`,
+          `SELECT id,
+                  to_char(registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS registered_at
+             FROM class_registrations
+             WHERE student_id = $1
+               AND LOWER(TRIM(class_name)) = LOWER(TRIM($2))`,
           [studentId, assignment.course_title]
         );
 
-        if (existingRegistration.rows.length === 0) {
-          // Get teacher/instructor name
-          let instructor = 'TBA';
-          if (assignment.teacher_id) {
-            const teacherResult = await client.query(
-              `SELECT display_name FROM staff_accounts WHERE id = $1`,
-              [assignment.teacher_id]
-            );
-            if (teacherResult.rows.length > 0) {
-              instructor = teacherResult.rows[0].display_name;
-            }
-          }
-
-          // Get course metadata for credits
-          let credits = 3; // Default to 3 credits
-          try {
-            const { getCourseMetadata } = await import('../utils/majors.js');
-            const metadata = getCourseMetadata(assignment.course_title);
-            if (metadata?.credits) {
-              credits = metadata.credits;
-            }
-          } catch (error) {
-            console.warn('Could not get course metadata for credits', error);
-          }
-
-          // Track credits for tuition calculation
-          totalCredits += credits;
-          registeredCourses.push({ courseTitle: assignment.course_title, credits });
-
-          // Use assignment's semester, or fallback to '1/2026' if not set
-          const semester = assignment.semester || '1/2026';
-
-          // Create class registration
-          const regResult = await client.query(
-            `INSERT INTO class_registrations (student_id, class_name, instructor, status, semester, credits, confirmed_by, registered_at)
-             VALUES ($1, $2, $3, 'registered', $4, $5, NULL, NOW())
-             RETURNING id, class_name, instructor`,
-            [studentId, assignment.course_title, instructor, semester, credits]
+        if (existingRegistration.rows.length > 0) {
+          const existing = existingRegistration.rows[0];
+          const registeredAt = existing?.registered_at
+            ? ` already confirmed on ${existing.registered_at}`
+            : '';
+          throw new Error(
+            `You are already registered for "${assignment.course_title}" (${assignment.course_code}).${registeredAt}`
           );
-          
-          console.log(`[ClassroomService] Created class registration for student ${studentId}: ${assignment.course_title} with instructor ${instructor}, ${credits} credits, semester ${semester} (ID: ${regResult.rows[0]?.id})`);
-
-          // Also add student to teacher_rosters so they appear in the teacher's roster
-          const existingRoster = await client.query(
-            `SELECT id FROM teacher_rosters WHERE teacher_id = $1 AND course_code = $2 AND student_id = $3`,
-            [assignment.teacher_id, assignment.course_code, studentId]
-          );
-
-          if (existingRoster.rows.length === 0) {
-            await client.query(
-              `INSERT INTO teacher_rosters (teacher_id, course_code, course_title, student_id, status)
-               VALUES ($1, $2, $3, $4, 'enrolled')`,
-              [assignment.teacher_id, assignment.course_code, assignment.course_title, studentId]
-            );
-            console.log(`[ClassroomService] Added student ${studentId} to teacher ${assignment.teacher_id}'s roster for ${assignment.course_code}`);
-          } else {
-            console.log(`[ClassroomService] Student ${studentId} already in teacher ${assignment.teacher_id}'s roster for ${assignment.course_code}, skipping`);
-          }
-
-          // Course registration fees are now replaced by a single tuition fee (calculated below)
-        } else {
-          console.log(`[ClassroomService] Class registration already exists for ${assignment.course_title}, skipping duplicate`);
         }
+
+        // Get teacher/instructor name
+        let instructor = 'TBA';
+        if (assignment.teacher_id) {
+          const teacherResult = await client.query(
+            `SELECT display_name FROM staff_accounts WHERE id = $1`,
+            [assignment.teacher_id]
+          );
+          if (teacherResult.rows.length > 0) {
+            instructor = teacherResult.rows[0].display_name;
+          }
+        }
+
+        // Get course metadata for credits
+        let credits = 3; // Default to 3 credits
+        try {
+          const { getCourseMetadata } = await import('../utils/majors.js');
+          const metadata = getCourseMetadata(assignment.course_title);
+          if (metadata?.credits) {
+            credits = metadata.credits;
+          }
+        } catch (error) {
+          console.warn('Could not get course metadata for credits', error);
+        }
+
+        // Track credits for tuition calculation
+        totalCredits += credits;
+        registeredCourses.push({ courseTitle: assignment.course_title, credits });
+
+        // Use assignment's semester, or fallback to '1/2026' if not set
+        const semester = assignment.semester || '1/2026';
+
+        // Create class registration
+        const regResult = await client.query(
+          `INSERT INTO class_registrations (student_id, class_name, instructor, status, semester, credits, confirmed_by, registered_at)
+           VALUES ($1, $2, $3, 'registered', $4, $5, NULL, NOW())
+           RETURNING id, class_name, instructor`,
+          [studentId, assignment.course_title, instructor, semester, credits]
+        );
+        
+        console.log(`[ClassroomService] Created class registration for student ${studentId}: ${assignment.course_title} with instructor ${instructor}, ${credits} credits, semester ${semester} (ID: ${regResult.rows[0]?.id})`);
+
+        // Also add student to teacher_rosters so they appear in the teacher's roster
+        const existingRoster = await client.query(
+          `SELECT id FROM teacher_rosters WHERE teacher_id = $1 AND course_code = $2 AND student_id = $3`,
+          [assignment.teacher_id, assignment.course_code, studentId]
+        );
+
+        if (existingRoster.rows.length === 0) {
+          await client.query(
+            `INSERT INTO teacher_rosters (teacher_id, course_code, course_title, student_id, status)
+             VALUES ($1, $2, $3, $4, 'enrolled')`,
+            [assignment.teacher_id, assignment.course_code, assignment.course_title, studentId]
+          );
+          console.log(`[ClassroomService] Added student ${studentId} to teacher ${assignment.teacher_id}'s roster for ${assignment.course_code}`);
+        } else {
+          console.log(`[ClassroomService] Student ${studentId} already in teacher ${assignment.teacher_id}'s roster for ${assignment.course_code}, skipping`);
+        }
+
+        // Course registration fees are now replaced by a single tuition fee (calculated below)
         
         // Increment counter and break if courseCode is provided (we should only process ONE course)
         coursesProcessed++;

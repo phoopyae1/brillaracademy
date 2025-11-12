@@ -213,7 +213,7 @@ export default function WidgetContainer() {
         }
       } finally {
         if (mounted) {
-          setLoadingWidgets(false);
+        setLoadingWidgets(false);
         }
       }
     };
@@ -288,15 +288,15 @@ export default function WidgetContainer() {
             widget.loading === "eager" ? "eager" : "lazy";
 
           return (
-            <Box
+        <Box
               key={widget.key ?? `integration-${index}`}
-              sx={{
-                width: "100%",
-                height: "100%",
-                overflow: "hidden",
-                position: "relative",
-                zIndex: 1,
-                isolation: "isolate",
+          sx={{
+            width: "100%",
+            height: "100%",
+            overflow: "hidden",
+            position: "relative",
+            zIndex: 1,
+            isolation: "isolate",
                 contain: "layout style paint size"
               }}
             >
@@ -313,7 +313,7 @@ export default function WidgetContainer() {
                   minHeight: widget.minHeight,
                   ...widget.style
                 }}
-              />
+        />
             </Box>
           );
         })

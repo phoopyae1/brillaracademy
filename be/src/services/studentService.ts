@@ -665,8 +665,8 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
           const paidForSemesterResult = await pool.query(
             `SELECT COALESCE(SUM(amount), 0) AS total_paid
              FROM fee_payments
-             WHERE student_id = $1
-               AND description LIKE $2
+             WHERE student_id = $1 
+             AND description LIKE $2
                AND status = 'paid'`,
             [studentId, `%${semester}%`]
           );
@@ -708,8 +708,8 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
             updatedFees = await listStudentFeePayments(studentId);
           } else {
             const [primaryPending, ...extraPending] = existingPendingFees.rows;
-
-            await pool.query(
+            
+              await pool.query(
               `UPDATE fee_payments
                  SET amount = $1,
                      description = $2,
@@ -730,7 +730,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
             console.log(
               `[StudentService] Updated outstanding fee to ${outstandingAmount} SGD for ${semester} (Paid: ${totalPaidForSemester})`
             );
-            updatedFees = await listStudentFeePayments(studentId);
+              updatedFees = await listStudentFeePayments(studentId);
           }
         }
       } catch (error) {

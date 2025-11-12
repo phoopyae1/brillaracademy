@@ -70,15 +70,15 @@ router.post('/student-registrations', requireStudent(), async (req: Authenticate
 
     const { rows } = await pool.query(
       `SELECT 
-         cr.id,
-         cr.student_id AS "studentId",
-         cr.class_name AS "className",
-         cr.instructor,
-         cr.status,
-         cr.semester,
-         cr.credits,
-         cr.confirmed_by AS "confirmedBy",
-         sa.display_name AS "confirmedByName",
+        cr.id,
+        cr.student_id AS "studentId",
+        cr.class_name AS "className",
+        cr.instructor,
+        cr.status,
+        cr.semester,
+        cr.credits,
+        cr.confirmed_by AS "confirmedBy",
+        sa.display_name AS "confirmedByName",
          to_char(cr.registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "registeredAt",
          ta.course_code AS "courseCode",
          ta.weekday,
@@ -101,9 +101,9 @@ router.post('/student-registrations', requireStudent(), async (req: Authenticate
     );
 
     const detailedRegistrations = rows.map((row: any) => ({
-      id: row.id,
-      studentId: row.studentId,
-      className: row.className,
+        id: row.id,
+        studentId: row.studentId,
+        className: row.className,
       courseCode: row.courseCode || null,
       instructor: row.instructor || row.teacherName || null,
       teacherName: row.teacherName || row.instructor || null,
@@ -112,7 +112,7 @@ router.post('/student-registrations', requireStudent(), async (req: Authenticate
       confirmedBy: row.confirmedBy,
       confirmedByName: row.confirmedByName || null,
       semester: row.semester || row.teachingSemester || null,
-      credits: row.credits,
+        credits: row.credits,
       registeredAt: row.registeredAt,
       weekday: row.weekday || null,
       startTime: row.startTime || null,
