@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import type { FormEvent } from 'react';
 import Container from '@mui/material/Container';
 import Box from '@mui/material/Box';
@@ -42,6 +42,9 @@ import {
   createAnnouncement,
   deleteAnnouncement,
   createAssignment,
+  fetchStudentDashboard,
+  deregisterStudentFromCourse,
+  deleteStudentAccount,
   type StaffAccount,
   type TeacherDashboard,
   type TeachingAssignment,
@@ -52,7 +55,8 @@ import {
   type TeacherRosterStudent,
   type TeacherScheduleSlot,
   type MajorSubjectCatalogEntry,
-  type Announcement
+  type Announcement,
+  type StudentDashboardData
 } from '@/lib/db';
 
 type StaffSession = { token: string; staff: StaffAccount };
@@ -151,75 +155,72 @@ export default function ForgePortalPage({ staffId }: ForgePortalPageProps = {}) 
     }
   }, []);
 
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     if (!session) {
       setTeacherDashboard(null);
-    setAssignments([]);
-    setClassrooms([]);
-    setTeachers([]);
-    setMajorCatalog([]);
-    setPayments([]);
-    setStudents([]);
-    return;
-  }
+      setAssignments([]);
+      setClassrooms([]);
+      setTeachers([]);
+      setMajorCatalog([]);
+      setPayments([]);
+      setStudents([]);
+      return;
+    }
 
-    let cancelled = false;
     setLoading(true);
     setLoadError('');
 
-    const load = async () => {
-      try {
-        if (session.staff.role === 'TEACHER') {
-          const dashboard = await fetchTeacherDashboard(session.token);
-          if (!cancelled) {
-            setTeacherDashboard(dashboard);
-          }
-        } else if (session.staff.role === 'IT_ADMIN') {
-          const [assignmentList, classroomList, staffList, majors, announcementsList] = await Promise.all([
-            listTeachingAssignments(session.token),
-            listClassrooms(session.token),
-            listStaff(session.token),
-            fetchMajorSubjectCatalog(),
-            listAnnouncements()
-          ]);
+    try {
+      if (session.staff.role === 'TEACHER') {
+        const dashboard = await fetchTeacherDashboard(session.token);
+        setTeacherDashboard(dashboard);
+      } else if (session.staff.role === 'IT_ADMIN') {
+        const [assignmentList, classroomList, staffList, majors, announcementsList, studentList] = await Promise.all([
+          listTeachingAssignments(session.token),
+          listClassrooms(session.token),
+          listStaff(session.token),
+          fetchMajorSubjectCatalog(),
+          listAnnouncements(),
+          listStudents(session.token)
+        ]);
 
-          if (!cancelled) {
-            setAssignments(assignmentList);
-            setClassrooms(classroomList);
-            setTeachers(staffList.filter((member) => member.role === 'TEACHER'));
-            setMajorCatalog(majors);
-            setAnnouncements(announcementsList);
-          }
-        } else if (session.staff.role === 'STUDENT_ADMIN') {
-          const [paymentList, studentList, announcementsList] = await Promise.all([
-            listFeePayments(session.token),
-            listStudents(session.token),
-            listAnnouncements()
-          ]);
+        setAssignments(assignmentList);
+        setClassrooms(classroomList);
+        setTeachers(staffList.filter((member) => member.role === 'TEACHER'));
+        setMajorCatalog(majors);
+        setAnnouncements(announcementsList);
+        setStudents(studentList);
+      } else if (session.staff.role === 'STUDENT_ADMIN') {
+        const [paymentList, studentList, announcementsList] = await Promise.all([
+          listFeePayments(session.token),
+          listStudents(session.token),
+          listAnnouncements()
+        ]);
 
-          if (!cancelled) {
-            setPayments(paymentList);
-            setStudents(studentList);
-            setAnnouncements(announcementsList);
-          }
-        }
-      } catch (error) {
-        if (!cancelled) {
-          const message = error instanceof Error ? error.message : 'Unable to load portal data.';
-          setLoadError(message);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        setPayments(paymentList);
+        setStudents(studentList);
+        setAnnouncements(announcementsList);
       }
-    };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to load portal data.';
+      setLoadError(message);
+    } finally {
+      setLoading(false);
+    }
+  }, [session]);
 
-    void load();
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
-    return () => {
-      cancelled = true;
-    };
+  const refreshStudents = useCallback(async () => {
+    if (!session || session.staff.role !== 'IT_ADMIN') return;
+    try {
+      const studentList = await listStudents(session.token);
+      setStudents(studentList);
+    } catch (error) {
+      console.error('Failed to refresh students list:', error);
+    }
   }, [session]);
 
   const handleLogout = () => {
@@ -446,6 +447,7 @@ export default function ForgePortalPage({ staffId }: ForgePortalPageProps = {}) 
               classrooms={classrooms}
               teachers={teachers}
               majors={majorCatalog}
+              students={students}
               onCreateAssignment={handleCreateAssignment}
               session={session}
               announcements={announcements}
@@ -460,6 +462,7 @@ export default function ForgePortalPage({ staffId }: ForgePortalPageProps = {}) 
                 await deleteAnnouncement(session.token, id);
                 setAnnouncements((prev) => prev.filter((a) => a.id !== id));
               }}
+              onStudentsChange={refreshStudents}
             />
           )}
 
@@ -1027,6 +1030,7 @@ type ItAdminWorkspaceProps = {
   classrooms: Classroom[];
   teachers: StaffAccount[];
   majors: MajorSubjectCatalogEntry[];
+  students: Student[];
   onCreateAssignment: (
     input: Omit<AssignmentFormState, 'status' | 'message'>
   ) => Promise<TeachingAssignment>;
@@ -1039,9 +1043,10 @@ type ItAdminWorkspaceProps = {
     eventDate?: string | null;
   }) => Promise<Announcement>;
   onDeleteAnnouncement: (id: number) => Promise<void>;
+  onStudentsChange?: () => void;
 };
 
-function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, onCreateAssignment, session, announcements, onCreateAnnouncement, onDeleteAnnouncement }: ItAdminWorkspaceProps) {
+function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, students, onCreateAssignment, session, announcements, onCreateAnnouncement, onDeleteAnnouncement, onStudentsChange }: ItAdminWorkspaceProps) {
   const [formState, setFormState] = useState<AssignmentFormState>({
     teacherId: '',
     classroomId: '',
@@ -1219,52 +1224,123 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
   }));
 
   return (
-    <Stack spacing={4}>
-      <Paper elevation={3} sx={{  p: { xs: 3, md: 4 } }}>
-        <Stack spacing={2.5}>
-          <Box>
-            <Typography variant="h5" fontWeight={700}>
-              Current Semester
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Current semester is open for: <strong>{currentSemester}</strong>
-            </Typography>
-            <Stack direction="row" spacing={2} alignItems="center">
-              <FormControl size="small" sx={{ minWidth: 150 }}>
-                <InputLabel id="current-semester-select">Set Current Semester</InputLabel>
-                <Select
-                  labelId="current-semester-select"
-                  label="Set Current Semester"
-                  value={currentSemester}
-                  onChange={(event) => handleUpdateSemester(event.target.value)}
-                  disabled={semesterUpdateStatus === 'submitting'}
-                >
-                  <MenuItem value="1/2026">1/2026</MenuItem>
-                  <MenuItem value="2/2026">2/2026</MenuItem>
-                  <MenuItem value="1/2027">1/2027</MenuItem>
-                  <MenuItem value="2/2027">2/2027</MenuItem>
-                </Select>
-              </FormControl>
-              {semesterUpdateStatus === 'submitting' && <CircularProgress size={20} />}
-              {semesterUpdateStatus === 'success' && (
-                <Alert severity="success" sx={{ py: 0 }}>Semester updated successfully</Alert>
-              )}
-              {semesterError && <Alert severity="error" sx={{ py: 0 }}>{semesterError}</Alert>}
+    <Stack spacing={3}>
+      {/* Summary Statistics */}
+      <Grid container spacing={2}>
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 2.5 }}>
+            <Stack spacing={1}>
+              <Typography variant="h4" fontWeight={700}>
+                {assignments.length}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Active assignments
+              </Typography>
             </Stack>
+          </Paper>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 2.5 }}>
+            <Stack spacing={1}>
+              <Typography variant="h4" fontWeight={700}>
+                {classrooms.length}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Total classrooms
+              </Typography>
+            </Stack>
+          </Paper>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 2.5 }}>
+            <Stack spacing={1}>
+              <Typography variant="h4" fontWeight={700}>
+                {teachers.length}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Active teachers
+              </Typography>
+            </Stack>
+          </Paper>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 2.5 }}>
+            <Stack spacing={1}>
+              <Typography variant="h4" fontWeight={700}>
+                {currentSemester}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Current semester
+              </Typography>
+            </Stack>
+          </Paper>
+        </Grid>
+      </Grid>
+
+      {/* Student Course Management */}
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+        <Stack spacing={3}>
+          <Box>
+            <Typography variant="h6" fontWeight={600} gutterBottom>
+              Student Course Management
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              View and manage student course registrations. Deregister students from courses as needed.
+            </Typography>
           </Box>
+          <Divider />
+          <StudentRegistrationsManager students={students} session={session} onStudentsChange={onStudentsChange} />
         </Stack>
       </Paper>
 
-      <Paper elevation={3} sx={{  p: { xs: 3, md: 4 } }}>
+      {/* Current Semester */}
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+        <Stack spacing={2}>
+          <Box>
+            <Typography variant="h6" fontWeight={600} gutterBottom>
+              Current Semester
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Manage the active semester for course registrations and assignments.
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={2} alignItems="center" sx={{ pt: 1 }}>
+            <FormControl size="medium" sx={{ minWidth: 180 }}>
+              <InputLabel id="current-semester-select">Set Current Semester</InputLabel>
+              <Select
+                labelId="current-semester-select"
+                label="Set Current Semester"
+                value={currentSemester}
+                onChange={(event) => handleUpdateSemester(event.target.value)}
+                disabled={semesterUpdateStatus === 'submitting'}
+              >
+                <MenuItem value="1/2026">1/2026</MenuItem>
+                <MenuItem value="2/2026">2/2026</MenuItem>
+                <MenuItem value="1/2027">1/2027</MenuItem>
+                <MenuItem value="2/2027">2/2027</MenuItem>
+              </Select>
+            </FormControl>
+            {semesterUpdateStatus === 'submitting' && <CircularProgress size={20} />}
+            {semesterUpdateStatus === 'success' && (
+              <Alert severity="success" sx={{ py: 0.5, px: 1.5 }}>Semester updated successfully</Alert>
+            )}
+            {semesterError && <Alert severity="error" sx={{ py: 0.5, px: 1.5 }}>{semesterError}</Alert>}
+          </Stack>
+        </Stack>
+      </Paper>
+
+      {/* Assign Teacher to Classroom */}
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
         <Stack spacing={2.5} component="form" onSubmit={handleSubmit} noValidate>
           <Box>
-            <Typography variant="h5" fontWeight={700}>
+            <Typography variant="h6" fontWeight={600} gutterBottom>
               Assign teacher to classroom
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Coordinate campus logistics by pairing instructors with available rooms and cohorts.
             </Typography>
           </Box>
+          <Divider />
 
           {formState.status === 'error' && <Alert severity="error">{formState.message}</Alert>}
           {formState.status === 'success' && <Alert severity="success">{formState.message}</Alert>}
@@ -1455,106 +1531,118 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
         </Stack>
       </Paper>
 
-      <Paper elevation={0} sx={{  border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+      {/* Active Assignments */}
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
         <Stack spacing={2}>
-          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
-            <Box>
-              <Typography variant="h6" fontWeight={700}>
-                Active assignments
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Every classroom assignment issued by IT administrators appears here.
-              </Typography>
+          <Box>
+            <Typography variant="h6" fontWeight={600} gutterBottom>
+              Active assignments
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Every classroom assignment issued by IT administrators appears here.
+            </Typography>
+          </Box>
+          <Divider />
+          {loading && (
+            <Box display="flex" justifyContent="center" py={2}>
+              <CircularProgress size={24} />
             </Box>
-            {loading && <CircularProgress size={20} />}
-          </Stack>
-
-          <Table size="medium">
-            <TableHead>
-              <TableRow>
-                <TableCell>Course</TableCell>
-                <TableCell>Teacher</TableCell>
-                <TableCell>Classroom</TableCell>
-                <TableCell>Schedule</TableCell>
-                <TableCell>Semester</TableCell>
-                <TableCell>Major</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {enrichedAssignments.map((assignment) => (
-                <TableRow key={assignment.id}>
-                  <TableCell>
-                    <Stack spacing={0.5}>
-                      <Typography fontWeight={600}>{assignment.courseTitle}</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {assignment.courseCode}
-                      </Typography>
-                    </Stack>
-                  </TableCell>
-                  <TableCell>{assignment.teacherName}</TableCell>
-                  <TableCell>
-                    <Stack spacing={0.5}>
-                      <Typography fontWeight={600}>{assignment.classroomName}</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {assignment.classroomLocation}
-                      </Typography>
-                    </Stack>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" fontWeight={600}>
-                      {assignment.weekday}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {assignment.startTime} – {assignment.endTime}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2">{assignment.semester || '1/2026'}</Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Chip label={assignment.majorFocus} size="small" color="info" variant="outlined" />
-                  </TableCell>
-                </TableRow>
-              ))}
-              {!enrichedAssignments.length && (
+          )}
+          {!loading && (
+            <Table>
+              <TableHead>
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                    No classroom assignments have been created yet.
-                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Course</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Teacher</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Classroom</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Schedule</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Semester</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Major</TableCell>
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
+              </TableHead>
+              <TableBody>
+                {enrichedAssignments.map((assignment) => (
+                  <TableRow key={assignment.id} hover>
+                    <TableCell>
+                      <Stack spacing={0.5}>
+                        <Typography fontWeight={600} variant="body2">
+                          {assignment.courseTitle}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {assignment.courseCode}
+                        </Typography>
+                      </Stack>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{assignment.teacherName}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Stack spacing={0.5}>
+                        <Typography fontWeight={500} variant="body2">
+                          {assignment.classroomName}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {assignment.classroomLocation}
+                        </Typography>
+                      </Stack>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight={500}>
+                        {assignment.weekday}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {assignment.startTime} – {assignment.endTime}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{assignment.semester || '1/2026'}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip label={assignment.majorFocus} size="small" color="info" variant="outlined" />
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {!enrichedAssignments.length && (
+                  <TableRow>
+                    <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                      <Typography variant="body2">No classroom assignments have been created yet.</Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          )}
         </Stack>
       </Paper>
 
-      <Paper elevation={0} sx={{  border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+      {/* All Classrooms */}
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
         <Stack spacing={2}>
-          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
-            <Box>
-              <Typography variant="h6" fontWeight={700}>
-                All classrooms
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                View all available classrooms on campus.
-              </Typography>
-            </Box>
-          </Stack>
-
-          <Table size="medium">
+          <Box>
+            <Typography variant="h6" fontWeight={600} gutterBottom>
+              All classrooms
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              View all available classrooms on campus.
+            </Typography>
+          </Box>
+          <Divider />
+          <Table>
             <TableHead>
               <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell>Location</TableCell>
-                <TableCell>Capacity</TableCell>
-                <TableCell>Resources</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Name</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Location</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Capacity</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Resources</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {classrooms.map((room) => (
-                <TableRow key={room.id}>
+                <TableRow key={room.id} hover>
                   <TableCell>
-                    <Typography fontWeight={600}>{room.name}</Typography>
+                    <Typography fontWeight={600} variant="body2">
+                      {room.name}
+                    </Typography>
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2" color="text.secondary">
@@ -1582,7 +1670,7 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
               {!classrooms.length && (
                 <TableRow>
                   <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                    No classrooms have been created yet.
+                    <Typography variant="body2">No classrooms have been created yet.</Typography>
                   </TableCell>
                 </TableRow>
               )}
@@ -1591,77 +1679,434 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
         </Stack>
       </Paper>
 
+      {/* Create Announcement */}
       <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
-        <Stack spacing={3}>
-          <Typography variant="h6" fontWeight={700}>
-            Create Announcement or Event
-          </Typography>
+        <Stack spacing={2}>
+          <Box>
+            <Typography variant="h6" fontWeight={600} gutterBottom>
+              Create Announcement or Event
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Post announcements and events visible to all students.
+            </Typography>
+          </Box>
+          <Divider />
           <AnnouncementForm onCreate={onCreateAnnouncement} />
         </Stack>
       </Paper>
 
+      {/* Announcements & Events */}
       <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
         <Stack spacing={2}>
-          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
-            <Box>
-              <Typography variant="h6" fontWeight={700}>
-                Announcements & Events
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Manage announcements and events visible to all students.
-              </Typography>
+          <Box>
+            <Typography variant="h6" fontWeight={600} gutterBottom>
+              Announcements & Events
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Manage announcements and events visible to all students.
+            </Typography>
+          </Box>
+          <Divider />
+          {loading && (
+            <Box display="flex" justifyContent="center" py={2}>
+              <CircularProgress size={24} />
             </Box>
-            {loading && <CircularProgress size={20} />}
-          </Stack>
-
-          <Stack spacing={2}>
-            {announcements.map((announcement) => (
-              <Paper key={announcement.id} elevation={0} sx={{ p: 2, border: '1px solid', borderColor: 'divider' }}>
-                <Stack spacing={1}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-                    <Box>
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <Chip
-                          label={announcement.type}
-                          size="small"
-                          color={announcement.type === 'event' ? 'primary' : 'default'}
-                          sx={{ textTransform: 'capitalize' }}
-                        />
-                        <Typography variant="h6" fontWeight={600}>
-                          {announcement.title}
+          )}
+          {!loading && (
+            <Stack spacing={2}>
+              {announcements.map((announcement) => (
+                <Paper key={announcement.id} elevation={0} sx={{ p: 2.5, border: '1px solid', borderColor: 'divider' }}>
+                  <Stack spacing={1.5}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                      <Box>
+                        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+                          <Chip
+                            label={announcement.type}
+                            size="small"
+                            color={announcement.type === 'event' ? 'primary' : 'default'}
+                            sx={{ textTransform: 'capitalize' }}
+                          />
+                          <Typography variant="h6" fontWeight={600}>
+                            {announcement.title}
+                          </Typography>
+                        </Stack>
+                        <Typography variant="body2" color="text.secondary">
+                          Posted by {announcement.postedByName || 'Admin'} on {formatTimestamp(announcement.createdAt)}
+                          {announcement.eventDate && ` • Event Date: ${formatTimestamp(announcement.eventDate)}`}
                         </Typography>
-                      </Stack>
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                        Posted by {announcement.postedByName || 'Admin'} on {formatTimestamp(announcement.createdAt)}
-                        {announcement.eventDate && ` • Event Date: ${formatTimestamp(announcement.eventDate)}`}
-                      </Typography>
-                    </Box>
-                    <Button
-                      size="small"
-                      color="error"
-                      onClick={async () => {
-                        if (confirm('Are you sure you want to delete this announcement?')) {
-                          await onDeleteAnnouncement(announcement.id);
-                        }
-                      }}
-                    >
-                      Delete
-                    </Button>
+                      </Box>
+                      <Button
+                        size="small"
+                        color="error"
+                        variant="outlined"
+                        onClick={async () => {
+                          if (confirm('Are you sure you want to delete this announcement?')) {
+                            await onDeleteAnnouncement(announcement.id);
+                          }
+                        }}
+                      >
+                        Delete
+                      </Button>
+                    </Stack>
+                    <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', pt: 0.5 }}>
+                      {announcement.content}
+                    </Typography>
                   </Stack>
-                  <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
-                    {announcement.content}
+                </Paper>
+              ))}
+              {announcements.length === 0 && (
+                <Box sx={{ py: 4, textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">
+                    No announcements yet. Create one above to get started.
+                  </Typography>
+                </Box>
+              )}
+            </Stack>
+          )}
+        </Stack>
+      </Paper>
+    </Stack>
+  );
+}
+
+type StudentRegistrationsManagerProps = {
+  students: Student[];
+  session: StaffSession;
+  onStudentsChange?: () => void;
+};
+
+function StudentRegistrationsManager({ students, session, onStudentsChange }: StudentRegistrationsManagerProps) {
+  const [selectedStudentId, setSelectedStudentId] = useState<string>('');
+  const [dashboardData, setDashboardData] = useState<StudentDashboardData | null>(null);
+  const [loadingDashboard, setLoadingDashboard] = useState(false);
+  const [deregistering, setDeregistering] = useState<Map<string, boolean>>(new Map());
+  const [deleting, setDeleting] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!selectedStudentId) {
+      setDashboardData(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadDashboard = async () => {
+      setLoadingDashboard(true);
+      setMessage(null);
+      try {
+        const data = await fetchStudentDashboard(Number(selectedStudentId));
+        if (!cancelled) {
+          setDashboardData(data);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to load student data.' });
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingDashboard(false);
+        }
+      }
+    };
+
+    void loadDashboard();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedStudentId]);
+
+  const handleDeregister = async (studentId: number, courseCode: string, courseTitle: string) => {
+    const key = `${studentId}-${courseCode}`;
+    if (!confirm(`Are you sure you want to deregister this student from "${courseTitle}" (${courseCode})?`)) {
+      return;
+    }
+
+    setDeregistering((prev) => new Map(prev).set(key, true));
+    setMessage(null);
+
+    try {
+      await deregisterStudentFromCourse(session.token, studentId, courseCode);
+      setMessage({ type: 'success', text: `Successfully deregistered student from ${courseTitle} (${courseCode}).` });
+      
+      // Reload dashboard data
+      const data = await fetchStudentDashboard(studentId);
+      setDashboardData(data);
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to deregister student from course.' });
+    } finally {
+      setDeregistering((prev) => {
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  };
+
+  const handleDeleteStudent = async () => {
+    if (!selectedStudentId) return;
+
+    const student = students.find((s) => String(s.id) === selectedStudentId);
+    const studentName = student ? `${student.firstName} ${student.lastName}` : `Student #${selectedStudentId}`;
+
+    if (!confirm(`Are you sure you want to DELETE the student account for "${studentName}" (ID: ${selectedStudentId})?\n\nThis action will permanently delete:\n- Student account\n- All course registrations\n- All grades and GPA records\n- All timetable entries\n\nThis action CANNOT be undone.`)) {
+      return;
+    }
+
+    setDeleting(true);
+    setMessage(null);
+
+    try {
+      await deleteStudentAccount(session.token, Number(selectedStudentId));
+      setMessage({ type: 'success', text: `Student account "${studentName}" has been deleted successfully.` });
+      
+      // Clear selected student and dashboard
+      setSelectedStudentId('');
+      setDashboardData(null);
+      
+      // Refresh students list
+      if (onStudentsChange) {
+        onStudentsChange();
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Failed to delete student account.' });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const registrations = dashboardData?.registrations ?? [];
+
+  const selectedStudent = students.find((s) => String(s.id) === selectedStudentId);
+  const totalCredits = registrations.reduce((sum, r) => sum + (r.credits || 0), 0);
+  const confirmedCount = registrations.filter((r) => r.confirmedBy !== null).length;
+
+  return (
+    <Stack spacing={3}>
+      {/* Student Selector */}
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 3 }}>
+        <Stack spacing={2}>
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Typography variant="subtitle1" fontWeight={600}>
+              Select Student
+            </Typography>
+            {selectedStudentId && (
+              <Button
+                size="small"
+                color="error"
+                variant="outlined"
+                disabled={deleting}
+                onClick={handleDeleteStudent}
+                startIcon={deleting ? <CircularProgress size={14} /> : undefined}
+              >
+                {deleting ? 'Deleting...' : 'Delete Account'}
+              </Button>
+            )}
+          </Stack>
+          <FormControl fullWidth>
+            <InputLabel id="student-select-label">Choose a student</InputLabel>
+            <Select
+              labelId="student-select-label"
+              label="Choose a student"
+              value={selectedStudentId}
+              onChange={(event) => setSelectedStudentId(event.target.value)}
+            >
+              {students.map((student) => (
+                <MenuItem key={student.id} value={String(student.id)}>
+                  {student.firstName} {student.lastName} (#{student.id})
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          {selectedStudent && (
+            <Box sx={{ pt: 1 }}>
+              <Chip
+                label={`${selectedStudent.firstName} ${selectedStudent.lastName} - ${selectedStudent.primaryInterest || 'N/A'}`}
+                color="primary"
+                variant="outlined"
+                size="small"
+              />
+            </Box>
+          )}
+        </Stack>
+      </Paper>
+
+      {message && (
+        <Alert severity={message.type} onClose={() => setMessage(null)}>
+          {message.text}
+        </Alert>
+      )}
+
+      {loadingDashboard && (
+        <Box display="flex" justifyContent="center" alignItems="center" py={6}>
+          <CircularProgress />
+        </Box>
+      )}
+
+      {!loadingDashboard && selectedStudentId && dashboardData && (
+        <Stack spacing={3}>
+          {/* Summary Statistics */}
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6} md={3}>
+              <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 2.5 }}>
+                <Stack spacing={1}>
+                  <Typography variant="h4" fontWeight={700}>
+                    {registrations.length}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Active courses
                   </Typography>
                 </Stack>
               </Paper>
-            ))}
-            {announcements.length === 0 && (
-              <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 4 }}>
-                No announcements yet. Create one above to get started.
-              </Typography>
-            )}
-          </Stack>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 2.5 }}>
+                <Stack spacing={1}>
+                  <Typography variant="h4" fontWeight={700}>
+                    {totalCredits}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Total credits registered
+                  </Typography>
+                </Stack>
+              </Paper>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 2.5 }}>
+                <Stack spacing={1}>
+                  <Typography variant="h4" fontWeight={700}>
+                    {confirmedCount}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Confirmed registrations
+                  </Typography>
+                </Stack>
+              </Paper>
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 2.5 }}>
+                <Stack spacing={1}>
+                  <Typography variant="h4" fontWeight={700}>
+                    {formatCurrency(totalCredits * 100)}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Estimated tuition
+                  </Typography>
+                </Stack>
+              </Paper>
+            </Grid>
+          </Grid>
+
+          {/* Class Registrations Table */}
+          <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 3 }}>
+            <Stack spacing={2}>
+              <Box>
+                <Typography variant="h6" fontWeight={600} gutterBottom>
+                  Class registrations
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Confirm enrolled classes, instructors, and registration status in one place.
+                </Typography>
+              </Box>
+
+              {registrations.length > 0 ? (
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600 }}>Class</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Instructor</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Credits</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Tuition</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Confirmed</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Registered</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 600 }}>Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {registrations.map((registration) => {
+                      // Use courseCode from registration if available, otherwise try to extract from className
+                      const courseCode = registration.courseCode || (() => {
+                        const courseCodeMatch = registration.className.match(/^([A-Z0-9-]+)/);
+                        return courseCodeMatch ? courseCodeMatch[1] : registration.className.split(' ')[0] || 'N/A';
+                      })();
+                      const key = `${selectedStudentId}-${courseCode}`;
+                      const isDeregistering = deregistering.get(key) || false;
+                      const credits = registration.credits || 0;
+                      const tuition = credits * 100;
+
+                      return (
+                        <TableRow key={registration.id} hover>
+                          <TableCell>
+                            <Typography variant="body2" fontWeight={500}>
+                              {registration.className}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">{registration.instructor || 'TBA'}</Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">{credits}</Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">{formatCurrency(tuition)}</Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={registration.status}
+                              size="small"
+                              color={registration.status === 'registered' ? 'success' : 'warning'}
+                              sx={{ textTransform: 'capitalize' }}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            {registration.confirmedBy ? (
+                              <Chip label="Confirmed" size="small" color="success" variant="outlined" />
+                            ) : (
+                              <Chip label="Pending" size="small" color="warning" variant="outlined" />
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">
+                              {formatTimestamp(registration.registeredAt)}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Button
+                              size="small"
+                              color="error"
+                              variant="outlined"
+                              disabled={isDeregistering || courseCode === 'N/A'}
+                              onClick={() => handleDeregister(Number(selectedStudentId), courseCode, registration.className)}
+                              startIcon={isDeregistering ? <CircularProgress size={14} /> : undefined}
+                            >
+                              {isDeregistering ? 'Processing...' : 'Deregister'}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              ) : (
+                <Box sx={{ py: 4, textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">
+                    No course registrations found for this student.
+                  </Typography>
+                </Box>
+              )}
+            </Stack>
+          </Paper>
         </Stack>
-      </Paper>
+      )}
+
+      {!selectedStudentId && !loadingDashboard && (
+        <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 4 }}>
+          <Typography variant="body2" color="text.secondary" align="center">
+            Select a student from the dropdown above to view their course registrations.
+          </Typography>
+        </Paper>
+      )}
     </Stack>
   );
 }

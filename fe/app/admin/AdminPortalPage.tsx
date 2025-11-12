@@ -145,6 +145,21 @@ export default function AdminPortalPage({ adminId }: AdminPortalPageProps = {}) 
       return;
     }
 
+    // Clear any existing student session before logging in as admin
+    if (typeof window !== 'undefined') {
+      // Clear student session from localStorage
+      localStorage.removeItem('student_portal');
+      // Clear student-related cookies
+      document.cookie.split(';').forEach(cookie => {
+        const cookieName = cookie.trim().split('=')[0];
+        if (cookieName.includes('student') || cookieName.includes('brillar_student')) {
+          document.cookie = `${cookieName}=; Max-Age=0; path=/; SameSite=Lax`;
+          document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+        }
+      });
+      console.log('Cleared student session before admin login');
+    }
+
     setAuthToken(result.token);
     setCurrentStaff(result.staff);
     setLoginState({ status: 'idle', message: '' });

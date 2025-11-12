@@ -496,19 +496,29 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
          ORDER BY start_time ASC`,
         [studentId]
       ),
-      pool.query<ClassRegistration>(
-        `SELECT id, student_id AS "studentId", class_name AS "className", instructor, status,
-                semester, credits, confirmed_by AS "confirmedBy",
-                to_char(registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "registeredAt"
-         FROM class_registrations
-         WHERE student_id = $1
-         ORDER BY registered_at DESC`,
+      pool.query<ClassRegistration & { courseCode?: string }>(
+        `SELECT * FROM (
+           SELECT DISTINCT ON (cr.id)
+                  cr.id, cr.student_id AS "studentId", cr.class_name AS "className", cr.instructor, cr.status,
+                  cr.semester, cr.credits, cr.confirmed_by AS "confirmedBy",
+                  to_char(cr.registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "registeredAt",
+                  COALESCE(tr.course_code, ta.course_code) AS "courseCode"
+           FROM class_registrations cr
+           LEFT JOIN teacher_rosters tr ON tr.student_id = cr.student_id 
+             AND LOWER(TRIM(tr.course_title)) = LOWER(TRIM(cr.class_name))
+           LEFT JOIN teaching_assignments ta ON LOWER(TRIM(ta.course_title)) = LOWER(TRIM(cr.class_name))
+           WHERE cr.student_id = $1
+           ORDER BY cr.id, COALESCE(tr.course_code, ta.course_code) NULLS LAST, cr.registered_at DESC
+         ) AS registrations
+         ORDER BY "registeredAt" DESC`,
         [studentId]
       )
     ]);
 
     // Check if student has classroom enrollments but missing class registrations
     // This can happen if they enrolled before the auto-enrollment code was added
+    // IMPORTANT: Only auto-create if student has NO registrations at all (not just missing some)
+    // This prevents auto-recreation of courses that were explicitly deregistered
     if (registrationsResult.rows.length === 0 && pool) {
       try {
         const { listClassroomEnrollmentsForStudent } = await import('./classroomService.js');
@@ -520,25 +530,37 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
         const allAssignments = await listTeachingAssignments();
         const studentMajor = student.primaryInterest?.trim().toLowerCase() || '';
         
+        // Only auto-create if student has classroom enrollments AND no registrations at all
+        // This is a one-time migration/setup, not a recurring sync
         if (classroomEnrollments.length > 0 && studentMajor) {
-          // Student has classroom enrollments but no class registrations
-          // Create missing class registrations for teaching assignments in their enrolled classrooms
-          for (const enrollment of classroomEnrollments) {
-            const classroomAssignments = allAssignments.filter(a => {
-              if (a.classroomId !== enrollment.classroomId) return false;
-              // Check if assignment major matches student major (case-insensitive)
-              const assignmentMajor = a.majorFocus?.trim().toLowerCase() || '';
-              return assignmentMajor === studentMajor;
-            });
-            
-            for (const assignment of classroomAssignments) {
-              // Check if registration already exists
-              const existingReg = await pool.query(
-                `SELECT id FROM class_registrations WHERE student_id = $1 AND class_name = $2`,
-                [studentId, assignment.courseTitle]
-              );
+          // Double-check: verify student truly has no registrations (including deleted ones)
+          const verifyNoRegs = await pool.query(
+            `SELECT COUNT(*) as count FROM class_registrations WHERE student_id = $1`,
+            [studentId]
+          );
+          const regCount = parseInt(verifyNoRegs.rows[0]?.count || '0', 10);
+          
+          // Only proceed if student has absolutely no registrations
+          // This prevents auto-recreation after explicit deregistration
+          if (regCount === 0) {
+            // Student has classroom enrollments but no class registrations
+            // Create missing class registrations for teaching assignments in their enrolled classrooms
+            for (const enrollment of classroomEnrollments) {
+              const classroomAssignments = allAssignments.filter(a => {
+                if (a.classroomId !== enrollment.classroomId) return false;
+                // Check if assignment major matches student major (case-insensitive)
+                const assignmentMajor = a.majorFocus?.trim().toLowerCase() || '';
+                return assignmentMajor === studentMajor;
+              });
               
-              if (existingReg.rows.length === 0) {
+              for (const assignment of classroomAssignments) {
+                // Check if registration already exists (double-check)
+                const existingReg = await pool.query(
+                  `SELECT id FROM class_registrations WHERE student_id = $1 AND class_name = $2`,
+                  [studentId, assignment.courseTitle]
+                );
+                
+                if (existingReg.rows.length === 0) {
                 // Get teacher/instructor name
                 const teacher = await findStaffById(assignment.teacherId);
                 const instructor = teacher?.displayName ?? 'TBA';
@@ -605,6 +627,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
             [studentId]
           );
           registrationsResult.rows = newRegistrationsResult.rows;
+          }
         }
       } catch (error) {
         console.error('[StudentService] Failed to auto-create missing class registrations', error);
@@ -875,5 +898,355 @@ export async function registerStudentForSemesterCourse(
 
     console.error('Failed to register student for course', error);
     throw new Error('Unable to register for the selected course right now.');
+  }
+}
+
+export async function deregisterStudentFromCourse(
+  studentId: number,
+  courseCode: string
+): Promise<{ success: boolean; message: string; removed: { classRegistrations: number; teacherRosters: number; timetables: number } }> {
+  if (!Number.isFinite(studentId)) {
+    throw new Error('Invalid student ID.');
+  }
+
+  if (!courseCode || typeof courseCode !== 'string' || courseCode.trim().length === 0) {
+    throw new Error('Course code is required.');
+  }
+
+  const pool = getPool();
+
+  if (!pool) {
+    throw new Error('Database connection not available.');
+  }
+
+  try {
+    // Start a transaction to ensure all deletions succeed or fail together
+    // @ts-expect-error - Pool.connect() exists at runtime but may not be in type definitions
+    const client = await pool.connect();
+    
+    try {
+      await client.query('BEGIN');
+
+      const normalizedCourseCode = courseCode.trim().toUpperCase();
+
+      // First, try to find all matching records using course code
+      // Get all class names that match this course code
+      const matchingClassesQuery = await client.query(
+        `SELECT DISTINCT cr.class_name, tr.course_code, ta.course_title
+         FROM class_registrations cr
+         LEFT JOIN teacher_rosters tr ON tr.student_id = cr.student_id 
+           AND LOWER(TRIM(tr.course_title)) = LOWER(TRIM(cr.class_name))
+         LEFT JOIN teaching_assignments ta ON LOWER(TRIM(ta.course_title)) = LOWER(TRIM(cr.class_name))
+         WHERE cr.student_id = $1
+           AND (UPPER(tr.course_code) = $2 OR UPPER(ta.course_code) = $2 OR cr.class_name ILIKE $3)`,
+        [studentId, normalizedCourseCode, `%${courseCode.trim()}%`]
+      );
+
+      const matchingClassNames = new Set<string>();
+      let foundCourseTitle: string | null = null;
+
+      if (matchingClassesQuery.rows.length > 0) {
+        for (const row of matchingClassesQuery.rows) {
+          if (row.class_name) {
+            matchingClassNames.add(row.class_name);
+            if (!foundCourseTitle && row.class_name) {
+              foundCourseTitle = row.class_name;
+            }
+          }
+        }
+      }
+
+      // If no matches found, try to find by course code in teacher_rosters or teaching_assignments
+      if (matchingClassNames.size === 0) {
+        const courseTitleQuery = await client.query(
+          `SELECT DISTINCT course_title
+           FROM teaching_assignments
+           WHERE UPPER(course_code) = $1
+           LIMIT 1`,
+          [normalizedCourseCode]
+        );
+
+        if (courseTitleQuery.rows.length > 0) {
+          const courseTitle = courseTitleQuery.rows[0].course_title;
+          if (courseTitle) {
+            foundCourseTitle = courseTitle;
+            matchingClassNames.add(courseTitle);
+          }
+        }
+      }
+
+      // If still no matches, try to find any class_registrations for this student that might match
+      if (matchingClassNames.size === 0) {
+        const allRegistrationsQuery = await client.query(
+          `SELECT DISTINCT class_name
+           FROM class_registrations
+           WHERE student_id = $1`,
+          [studentId]
+        );
+
+        for (const row of allRegistrationsQuery.rows) {
+          if (row.class_name && (
+            row.class_name.toUpperCase().includes(normalizedCourseCode) ||
+            normalizedCourseCode.includes(row.class_name.toUpperCase().substring(0, 3))
+          )) {
+            matchingClassNames.add(row.class_name);
+            if (!foundCourseTitle) {
+              foundCourseTitle = row.class_name;
+            }
+          }
+        }
+      }
+
+      if (matchingClassNames.size === 0) {
+        await client.query('ROLLBACK');
+        throw new Error(`Course "${courseCode}" not found for student ${studentId}.`);
+      }
+
+      console.log(`[StudentService] Found ${matchingClassNames.size} matching class(es) for course code ${courseCode}:`, Array.from(matchingClassNames));
+
+      // Delete from class_registrations - delete ALL matching class names
+      let totalClassRegCount = 0;
+      for (const className of matchingClassNames) {
+        const classRegResult = await client.query(
+          `DELETE FROM class_registrations
+           WHERE student_id = $1
+             AND LOWER(TRIM(class_name)) = LOWER(TRIM($2))
+           RETURNING id`,
+          [studentId, className]
+        );
+        totalClassRegCount += classRegResult.rowCount || 0;
+      }
+
+      // Delete from teacher_rosters - by course code
+      const rosterResult = await client.query(
+        `DELETE FROM teacher_rosters
+         WHERE student_id = $1
+           AND UPPER(course_code) = $2
+         RETURNING id`,
+        [studentId, normalizedCourseCode]
+      );
+      const rosterCount = rosterResult.rowCount || 0;
+
+      // Delete from timetables - delete ALL matching subjects
+      let totalTimetableCount = 0;
+      for (const className of matchingClassNames) {
+        const timetableResult = await client.query(
+          `DELETE FROM timetables
+           WHERE student_id = $1
+             AND LOWER(TRIM(subject)) = LOWER(TRIM($2))
+           RETURNING id`,
+          [studentId, className]
+        );
+        totalTimetableCount += timetableResult.rowCount || 0;
+      }
+
+      // Also delete from teacher_rosters by course title if course code didn't match
+      let totalRosterCount = rosterCount;
+      if (rosterCount === 0 && foundCourseTitle) {
+        const rosterByTitleResult = await client.query(
+          `DELETE FROM teacher_rosters
+           WHERE student_id = $1
+             AND LOWER(TRIM(course_title)) = LOWER(TRIM($2))
+           RETURNING id`,
+          [studentId, foundCourseTitle]
+        );
+        const rosterByTitleCount = rosterByTitleResult.rowCount || 0;
+        totalRosterCount += rosterByTitleCount;
+        if (rosterByTitleCount > 0) {
+          console.log(`[StudentService] Deleted ${rosterByTitleCount} teacher_roster entries by course title`);
+        }
+      }
+
+      // Also delete from classroom_registrations if this course was the only one in that classroom
+      // First, find which classrooms this course belongs to
+      let classroomRegCount = 0;
+      if (foundCourseTitle) {
+        // Find classrooms that have this course
+        const classroomQuery = await client.query(
+          `SELECT DISTINCT ta.classroom_id
+           FROM teaching_assignments ta
+           WHERE LOWER(TRIM(ta.course_title)) = LOWER(TRIM($1))
+             OR UPPER(ta.course_code) = $2`,
+          [foundCourseTitle, normalizedCourseCode]
+        );
+
+        for (const row of classroomQuery.rows) {
+          const classroomId = row.classroom_id;
+          
+          // Check if student has other registrations in this classroom
+          const otherRegsQuery = await client.query(
+            `SELECT COUNT(*) as count
+             FROM class_registrations cr
+             JOIN teaching_assignments ta ON LOWER(TRIM(ta.course_title)) = LOWER(TRIM(cr.class_name))
+             WHERE cr.student_id = $1
+               AND ta.classroom_id = $2
+               AND LOWER(TRIM(cr.class_name)) != LOWER(TRIM($3))`,
+            [studentId, classroomId, foundCourseTitle]
+          );
+
+          const otherRegsCount = parseInt(otherRegsQuery.rows[0]?.count || '0', 10);
+          
+          // If no other registrations in this classroom, remove the classroom enrollment
+          if (otherRegsCount === 0) {
+            const classroomRegResult = await client.query(
+              `DELETE FROM classroom_registrations
+               WHERE student_id = $1
+                 AND classroom_id = $2
+               RETURNING id`,
+              [studentId, classroomId]
+            );
+            classroomRegCount += classroomRegResult.rowCount || 0;
+            if (classroomRegResult.rowCount > 0) {
+              console.log(`[StudentService] Deleted classroom_registration for student ${studentId} in classroom ${classroomId}`);
+            }
+          }
+        }
+      }
+
+      // Also ensure ALL teacher_rosters entries for this course code are deleted (regardless of teacher_id)
+      // This is important because the registration check looks for course_code + teacher_id
+      const allRosterEntries = await client.query(
+        `SELECT id, teacher_id, course_code, course_title
+         FROM teacher_rosters
+         WHERE student_id = $1
+           AND UPPER(course_code) = $2`,
+        [studentId, normalizedCourseCode]
+      );
+      
+      if (allRosterEntries.rows.length > 0) {
+        console.log(`[StudentService] Found ${allRosterEntries.rows.length} additional teacher_roster entries to delete:`, 
+          allRosterEntries.rows.map((r: any) => ({ teacher_id: r.teacher_id, course_code: r.course_code, course_title: r.course_title })));
+        
+        const additionalRosterDelete = await client.query(
+          `DELETE FROM teacher_rosters
+           WHERE student_id = $1
+             AND UPPER(course_code) = $2
+           RETURNING id`,
+          [studentId, normalizedCourseCode]
+        );
+        
+        const additionalRosterCount = additionalRosterDelete.rowCount || 0;
+        totalRosterCount += additionalRosterCount;
+        if (additionalRosterCount > 0) {
+          console.log(`[StudentService] Deleted ${additionalRosterCount} additional teacher_roster entries`);
+        }
+      }
+
+      // Verify that at least some records were deleted
+      const totalDeleted = totalClassRegCount + totalRosterCount + totalTimetableCount;
+      if (totalDeleted === 0) {
+        await client.query('ROLLBACK');
+        throw new Error(`No records found to delete for course "${courseCode}" and student ${studentId}.`);
+      }
+
+      await client.query('COMMIT');
+
+      const removed = {
+        classRegistrations: totalClassRegCount,
+        teacherRosters: totalRosterCount,
+        timetables: totalTimetableCount
+      };
+
+      console.log(`[StudentService] Deregistered student ${studentId} from course ${courseCode}:`, removed);
+      console.log(`[StudentService] Deleted from class_registrations: ${totalClassRegCount}, teacher_rosters: ${totalRosterCount}, timetables: ${totalTimetableCount}`);
+
+      return {
+        success: true,
+        message: `Successfully deregistered student from course "${foundCourseTitle || courseCode}" (${courseCode}).`,
+        removed
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error: any) {
+    console.error('Failed to deregister student from course', error);
+    const errorMessage = error?.message || 'Unable to deregister student from course.';
+    throw new Error(errorMessage);
+  }
+}
+
+export async function deleteStudent(studentId: number): Promise<{ success: boolean; message: string }> {
+  if (!Number.isFinite(studentId)) {
+    throw new Error('Invalid student ID.');
+  }
+
+  const pool = getPool();
+
+  if (!pool) {
+    throw new Error('Database connection not available.');
+  }
+
+  try {
+    // Start a transaction to ensure all deletions succeed or fail together
+    // @ts-expect-error - Pool.connect() exists at runtime but may not be in type definitions
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      // First, verify the student exists
+      const { rows: studentRows } = await client.query(
+        `SELECT id, email FROM student_accounts WHERE id = $1`,
+        [studentId]
+      );
+
+      if (studentRows.length === 0) {
+        await client.query('ROLLBACK');
+        throw new Error(`Student with ID ${studentId} not found.`);
+      }
+
+      const studentEmail = studentRows[0].email;
+
+      // Delete all related records in order (respecting foreign key constraints)
+      // Delete from timetables
+      await client.query('DELETE FROM timetables WHERE student_id = $1', [studentId]);
+
+      // Delete from class_registrations
+      await client.query('DELETE FROM class_registrations WHERE student_id = $1', [studentId]);
+
+      // Delete from teacher_rosters
+      await client.query('DELETE FROM teacher_rosters WHERE student_id = $1', [studentId]);
+
+      // Delete from classroom_registrations
+      await client.query('DELETE FROM classroom_registrations WHERE student_id = $1', [studentId]);
+
+      // Delete from semester_gpa (if exists)
+      try {
+        await client.query('DELETE FROM semester_gpa WHERE student_id = $1', [studentId]);
+      } catch (e) {
+        // Table might not exist, ignore
+      }
+
+      // Delete from grades (if exists)
+      try {
+        await client.query('DELETE FROM grades WHERE student_id = $1', [studentId]);
+      } catch (e) {
+        // Table might not exist, ignore
+      }
+
+      // Finally, delete the student account
+      await client.query('DELETE FROM student_accounts WHERE id = $1', [studentId]);
+
+      await client.query('COMMIT');
+
+      console.log(`[StudentService] Deleted student ${studentId} (${studentEmail}) and all related records.`);
+
+      return {
+        success: true,
+        message: `Student account ${studentEmail} (ID: ${studentId}) has been deleted successfully.`
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error: any) {
+    console.error('Failed to delete student', error);
+    const errorMessage = error?.message || 'Unable to delete student account.';
+    throw new Error(errorMessage);
   }
 }

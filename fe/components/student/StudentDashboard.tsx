@@ -214,29 +214,29 @@ export default function StudentDashboard({
       sx={{
         minHeight: '100vh',
         background: '#F5F7FB',
-        py: { xs: 5, md: 8 },
+        py: { xs: 4, md: 6 },
         px: { xs: 2, md: 3 }
       }}
     >
-      <Container maxWidth="lg">
-        <Grid container spacing={4}>
+      <Container maxWidth="xl">
+        <Grid container spacing={3}>
           {/* Left Sidebar */}
-          <Grid item xs={12} md={3} lg={3}>
+          <Grid item xs={12} md={3}>
             <Paper
               elevation={0}
               sx={{
                 p: 3,
-                height: '100%',
-                background: 'rgba(255, 255, 255, 0.98)',
+                height: 'fit-content',
+                background: '#ffffff',
                 border: '1px solid',
-                borderColor: 'rgba(255,255,255,0.6)',
+                borderColor: 'divider',
                 position: 'sticky',
                 top: 20
               }}
             >
-              <Stack spacing={4}>
+              <Stack spacing={3}>
                 <Stack spacing={1.5}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                     <Image
                       src="/assets/brillar-logo.png"
                       alt="Brillar Academy Logo"
@@ -248,13 +248,12 @@ export default function StudentDashboard({
                       Brillar Academy
                     </Typography>
                   </Box>
-                  <Typography variant="h5" fontWeight={700}>
+                  <Typography variant="h6" fontWeight={700}>
                     Student Portal
                   </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Navigate through your courses, plan your week, and monitor key milestones from a single dashboard.
-                  </Typography>
                 </Stack>
+
+                <Divider />
 
                 <List disablePadding>
                   {navItems.map((item) => {
@@ -265,21 +264,24 @@ export default function StudentDashboard({
                         selected={isSelected}
                         onClick={() => setActiveTab(item.id)}
                         sx={{
-                          mb: 1.5,
-                          backgroundColor: isSelected ? '#E0F2F7' : 'transparent',
+                          mb: 0.5,
+                          borderRadius: 1,
+                          backgroundColor: isSelected ? 'primary.light' : 'transparent',
                           '&:hover': {
-                            backgroundColor: isSelected ? '#D0E8F0' : 'rgba(63, 136, 197, 0.08)'
+                            backgroundColor: isSelected ? 'primary.light' : 'action.hover'
                           },
-                          '&.Mui-selected:hover': {
-                            backgroundColor: '#D0E8F0'
-                          },
-                          transition: 'background-color 0.2s ease'
+                          '&.Mui-selected': {
+                            backgroundColor: 'primary.light',
+                            '&:hover': {
+                              backgroundColor: 'primary.light'
+                            }
+                          }
                         }}
                       >
                         <ListItemIcon
                           sx={{
                             color: isSelected ? 'primary.main' : 'text.secondary',
-                            minWidth: 40
+                            minWidth: 36
                           }}
                         >
                           {item.icon}
@@ -288,52 +290,28 @@ export default function StudentDashboard({
                           primary={item.label}
                           primaryTypographyProps={{
                             fontWeight: isSelected ? 600 : 500,
-                            color: isSelected ? 'primary.main' : 'text.primary'
+                            fontSize: '0.875rem'
                           }}
                         />
                       </ListItemButton>
                     );
                   })}
                 </List>
-
-                <Paper
-                  variant="outlined"
-                  sx={{
-                    p: 3,
-                    background: 'rgba(255, 255, 255, 0.98)',
-                    borderColor: 'rgba(63, 136, 197, 0.2)'
-                  }}
-                >
-                  <Stack spacing={1}>
-                    <Typography variant="subtitle2" fontWeight={600}>
-                      Need a hand?
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Contact your advisor for course adjustments or curriculum guidance at any time.
-                    </Typography>
-                    <Chip
-                      label="Advisor support"
-                      size="small"
-                      color="primary"
-                      variant="outlined"
-                      sx={{ alignSelf: 'flex-start' }}
-                    />
-                  </Stack>
-                </Paper>
               </Stack>
             </Paper>
           </Grid>
 
           {/* Main Content Area */}
-          <Grid item xs={12} md={9} lg={9}>
-            <Stack spacing={4}>
+          <Grid item xs={12} md={9}>
+            <Stack spacing={3}>
               {/* Header Bar */}
               <Paper
                 elevation={0}
                 sx={{
-                  p: { xs: 3, sm: 4 },
-                  background: 'rgba(255, 255, 255, 0.98)',
-                  border: '1px solid rgba(63, 136, 197, 0.15)'
+                  p: 3,
+                  background: '#ffffff',
+                  border: '1px solid',
+                  borderColor: 'divider'
                 }}
               >
                 <Stack
@@ -342,67 +320,32 @@ export default function StudentDashboard({
                   alignItems={{ xs: 'flex-start', md: 'center' }}
                   justifyContent="space-between"
                 >
-                  <Stack spacing={1.5}>
-                    <Chip
-                      label="Student dashboard"
-                      size="small"
-                      color="primary"
-                      sx={{ alignSelf: 'flex-start', fontWeight: 600 }}
-                    />
-                    <Typography variant="h4" fontWeight={700}>
-                      Hello {student.firstName} 👋
+                  <Stack spacing={1}>
+                    <Typography variant="h5" fontWeight={700}>
+                      Hello, {student.firstName} 👋
                     </Typography>
-                    <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 460 }}>
-                      Here&apos;s a snapshot of your learning journey. Track schedules, assessments, and outstanding
-                      actions for the week.
+                    <Typography variant="body2" color="text.secondary">
+                      Here&apos;s a snapshot of your learning journey. Track schedules, assessments, and outstanding actions.
                     </Typography>
                   </Stack>
 
-                  <Stack spacing={2} width={{ xs: '100%', md: 320 }}>
-                    <TextField
-                      fullWidth
-                      placeholder="Search courses or tutors"
-                      InputProps={{
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <SearchRoundedIcon fontSize="small" color="action" />
-                          </InputAdornment>
-                        ),
-                        sx: {
-                          backgroundColor: 'rgba(255,255,255,0.9)',
-                          '& fieldset': { border: 'none' }
-                        }
+                  <Stack direction="row" spacing={2} alignItems="center">
+                    <IconButton size="small">
+                      <Badge color="error" variant="dot" overlap="circular">
+                        <NotificationsRoundedIcon />
+                      </Badge>
+                    </IconButton>
+                    <Avatar
+                      sx={{
+                        bgcolor: 'primary.main',
+                        width: 40,
+                        height: 40,
+                        fontWeight: 600,
+                        fontSize: '0.875rem'
                       }}
-                      size="small"
-                    />
-                    <Stack
-                      direction="row"
-                      spacing={2}
-                      alignItems="center"
-                      justifyContent={{ xs: 'flex-start', md: 'flex-end' }}
                     >
-                      <IconButton
-                        sx={{
-                          backgroundColor: 'rgba(255,255,255,0.9)',
-                          '&:hover': { backgroundColor: 'rgba(255,255,255,1)' }
-                        }}
-                      >
-                        <Badge color="error" variant="dot" overlap="circular">
-                          <NotificationsRoundedIcon color="primary" />
-                        </Badge>
-                      </IconButton>
-                      <Avatar
-                        sx={{
-                          bgcolor: 'primary.main',
-                          color: 'primary.contrastText',
-                          width: 44,
-                          height: 44,
-                          fontWeight: 600
-                        }}
-                      >
-                        {avatarInitials.toUpperCase()}
-                      </Avatar>
-                    </Stack>
+                      {avatarInitials.toUpperCase()}
+                    </Avatar>
                   </Stack>
                 </Stack>
               </Paper>

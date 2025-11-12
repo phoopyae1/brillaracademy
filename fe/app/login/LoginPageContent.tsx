@@ -267,6 +267,21 @@ export default function LoginPageContent() {
             
             const fullName = `${student.firstName} ${student.lastName}`.trim();
             
+            // Clear any existing staff/admin session before logging in as student
+            if (typeof window !== 'undefined') {
+              // Clear staff session from sessionStorage
+              window.sessionStorage.removeItem('brillar_staff_session');
+              // Clear any staff-related cookies
+              document.cookie.split(';').forEach(cookie => {
+                const cookieName = cookie.trim().split('=')[0];
+                if (cookieName.includes('staff') || cookieName.includes('admin') || cookieName.includes('forge')) {
+                  document.cookie = `${cookieName}=; Max-Age=0; path=/; SameSite=Lax`;
+                  document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+                }
+              });
+              console.log('Cleared staff/admin session before student login');
+            }
+            
             // Create and save student portal session to localStorage
             // Use accessToken (JWT) from server authentication
             const nextSession: StudentPortalSession = {
@@ -391,7 +406,21 @@ export default function LoginPageContent() {
             return;
         }
 
+          // Clear any existing student session before logging in as staff/admin
           if (typeof window !== "undefined") {
+            // Clear student session from localStorage
+            localStorage.removeItem('student_portal');
+            // Clear student-related cookies
+            document.cookie.split(';').forEach(cookie => {
+              const cookieName = cookie.trim().split('=')[0];
+              if (cookieName.includes('student') || cookieName.includes('brillar_student')) {
+                document.cookie = `${cookieName}=; Max-Age=0; path=/; SameSite=Lax`;
+                document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+              }
+            });
+            console.log('Cleared student session before staff/admin login');
+            
+            // Save staff session
             window.sessionStorage.setItem(
               "brillar_staff_session",
               JSON.stringify(staffSession)

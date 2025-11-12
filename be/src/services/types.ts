@@ -46,6 +46,7 @@ export type ClassRegistration = {
   semester?: string;
   credits?: number;
   confirmedBy?: number | null;
+  courseCode?: string;
 };
 
 export type StudentDashboardData = {

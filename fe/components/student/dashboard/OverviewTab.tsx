@@ -103,100 +103,53 @@ export default function OverviewTab({
     ? gpaBySemester.reduce((sum, entry) => sum + entry.gpa, 0) / gpaBySemester.length
     : null;
 
-  const getFeeStatus = (subject: string) => {
-    const fee = fees.find(f => f.description?.includes(subject));
-    return fee ? fee.status : null;
-  };
-
   return (
-    <>
-      {/* Stats Cards */}
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={4}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 3,
-              height: '100%',
-              background: 'rgba(255, 255, 255, 0.98)',
-              border: '1px solid rgba(63, 136, 197, 0.2)'
-            }}
-          >
-            <Stack spacing={2}>
-              <Stack direction="row" spacing={1.5} alignItems="center">
-                <MenuBookRoundedIcon color="primary" />
-                <Typography variant="subtitle2" fontWeight={600} color="primary.main">
-                  Active courses
-                </Typography>
-              </Stack>
-              <Typography variant="h3" fontWeight={700}>
+    <Stack spacing={3}>
+      {/* Summary Statistics */}
+      <Grid container spacing={2}>
+        <Grid item xs={12} sm={6} md={4}>
+          <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 2.5 }}>
+            <Stack spacing={1}>
+              <Typography variant="h4" fontWeight={700}>
                 {registeredCourses.length}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {totalCredits}/{creditLimit} credits registered
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Estimated tuition: <Typography component="span" fontWeight={700}>{formatCurrency(tuitionEstimate)}</Typography>
+                Active courses
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                1 credit = {formatCurrency(CREDIT_RATE)} · {totalCredits} credit{totalCredits === 1 ? '' : 's'} confirmed
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {registrations.length} total registrations this term.
+                {totalCredits}/{creditLimit} credits · {formatCurrency(tuitionEstimate)} estimated
               </Typography>
             </Stack>
           </Paper>
         </Grid>
-        <Grid item xs={12} md={4}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 3,
-              height: '100%',
-              background: 'rgba(255, 255, 255, 0.98)',
-              border: '1px solid rgba(63, 136, 197, 0.2)'
-            }}
-          >
-            <Stack spacing={2}>
-              <Stack direction="row" spacing={1.5} alignItems="center">
-                <ScheduleRoundedIcon color="info" />
-                <Typography variant="subtitle2" fontWeight={600} color="info.main">
-                  Upcoming events
-                </Typography>
-              </Stack>
-              <Typography variant="h3" fontWeight={700}>
+        <Grid item xs={12} sm={6} md={4}>
+          <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 2.5 }}>
+            <Stack spacing={1}>
+              <Typography variant="h4" fontWeight={700}>
                 {schedule.length}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {schedule.length ? 'Review the agenda below and stay prepared.' : 'No events scheduled just yet.'}
+                Upcoming events
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {schedule.length ? 'Review agenda below' : 'No events scheduled'}
               </Typography>
             </Stack>
           </Paper>
         </Grid>
-        <Grid item xs={12} md={4}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 3,
-              height: '100%',
-              background: 'rgba(255, 255, 255, 0.98)',
-              border: '1px solid rgba(63, 136, 197, 0.2)'
-            }}
-          >
-            <Stack spacing={2}>
-              <Stack direction="row" spacing={1.5} alignItems="center">
-                <AttachMoneyRoundedIcon color="secondary" />
-                <Typography variant="subtitle2" fontWeight={600} color="secondary.main">
-                  Outstanding balance
-                </Typography>
-              </Stack>
-              <Typography variant="h3" fontWeight={700}>
+        <Grid item xs={12} sm={6} md={4}>
+          <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 2.5 }}>
+            <Stack spacing={1}>
+              <Typography variant="h4" fontWeight={700}>
                 {formatCurrency(totalOutstanding)}
               </Typography>
               <Typography variant="body2" color="text.secondary">
+                Outstanding balance
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
                 {outstandingFees.length > 0
-                  ? `${outstandingFees.length} fee reminder${outstandingFees.length > 1 ? 's' : ''} awaiting payment.`
-                  : 'All fees have been paid. Outstanding balance is S$0.00.'}
+                  ? `${outstandingFees.length} fee${outstandingFees.length > 1 ? 's' : ''} pending`
+                  : 'All fees paid'}
               </Typography>
             </Stack>
           </Paper>
@@ -205,78 +158,53 @@ export default function OverviewTab({
 
       {/* Main Content Grid */}
       <Grid container spacing={3}>
-        <Grid item xs={12} md={8}>
+        <Grid item xs={12} lg={8}>
           <Stack spacing={3}>
             {/* Weekly Timetable */}
-            <Paper
-              elevation={0}
-              sx={{
-                p: 3,
-                backgroundColor: '#ffffff',
-                border: '1px solid',
-                borderColor: 'rgba(0, 0, 0, 0.08)'
-              }}
-            >
+            <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 3 }}>
               <Stack spacing={2}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Typography variant="h6" fontWeight={700}>
+                <Box>
+                  <Typography variant="h6" fontWeight={600} gutterBottom>
                     Weekly timetable
                   </Typography>
-                  <Chip
-                    icon={<CalendarTodayRoundedIcon fontSize="small" />}
-                    label="This week"
-                    size="small"
-                    color="primary"
-                    variant="outlined"
-                  />
-                </Stack>
-                <Typography variant="body2" color="text.secondary">
-                  Track locations and course sessions for the coming week.
-                </Typography>
-                <Divider sx={{ borderStyle: 'dashed' }} />
+                  <Typography variant="body2" color="text.secondary">
+                    Track locations and course sessions for the coming week.
+                  </Typography>
+                </Box>
+                <Divider />
                 <TableContainer>
-                  <Table size="small">
+                  <Table>
                     <TableHead>
                       <TableRow>
-                        <TableCell>Day</TableCell>
-                        <TableCell>Time</TableCell>
-                        <TableCell>Subject</TableCell>
-                        <TableCell>Location</TableCell>
-                        <TableCell>Status</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>Day</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>Time</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>Subject</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>Location</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
                       {sortedTimetable.map((entry) => {
-                        const feeStatus = getFeeStatus(entry.subject);
                         return (
-                          <TableRow key={entry.id}>
-                            <TableCell sx={{ fontWeight: 600 }}>{entry.weekday}</TableCell>
+                          <TableRow key={entry.id} hover>
+                            <TableCell sx={{ fontWeight: 500 }}>{entry.weekday}</TableCell>
                             <TableCell>
-                              {entry.startTime} – {entry.endTime}
+                              <Typography variant="body2">{entry.startTime} – {entry.endTime}</Typography>
                             </TableCell>
-                            <TableCell>{entry.subject}</TableCell>
-                            <TableCell>{entry.location ?? 'TBA'}</TableCell>
                             <TableCell>
-                              {feeStatus ? (
-                                <Chip
-                                  label={feeStatus === 'paid' ? 'Paid' : 'Pending'}
-                                  size="small"
-                                  color={feeStatus === 'paid' ? 'success' : 'warning'}
-                                  sx={{ fontWeight: 600 }}
-                                />
-                              ) : (
-                                <Typography variant="body2" color="text.secondary">
-                                  —
-                                </Typography>
-                              )}
+                              <Typography variant="body2">{entry.subject}</Typography>
+                            </TableCell>
+                            <TableCell>
+                              <Typography variant="body2" color="text.secondary">
+                                {entry.location ?? 'TBA'}
+                              </Typography>
                             </TableCell>
                           </TableRow>
                         );
                       })}
                       {!sortedTimetable.length && (
                         <TableRow>
-                          <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                            No sessions scheduled yet.
+                          <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                            <Typography variant="body2">No sessions scheduled yet.</Typography>
                           </TableCell>
                         </TableRow>
                       )}
@@ -287,40 +215,54 @@ export default function OverviewTab({
             </Paper>
 
             {/* Registration Windows */}
-            <Paper
-              elevation={0}
-              sx={{
-                p: 3,
-                backgroundColor: '#ffffff',
-                border: '1px solid',
-                borderColor: 'rgba(0, 0, 0, 0.08)'
-              }}
-            >
+            <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 3 }}>
               <Stack spacing={2}>
-                <Typography variant="h6" fontWeight={700}>
-                  Registration windows
-                </Typography>
+                <Box>
+                  <Typography variant="h6" fontWeight={600} gutterBottom>
+                    Registration windows
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    View available registration periods and course offerings.
+                  </Typography>
+                </Box>
+                <Divider />
                 {nextRegistrationWindow ? (
-                  <Stack spacing={1}>
-                    <Typography fontWeight={600}>{nextRegistrationWindow.semester}</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Status: {nextRegistrationWindow.status.toUpperCase()} · Opens{' '}
-                      {formatDateTime(nextRegistrationWindow.opensAt)}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Closes {formatDateTime(nextRegistrationWindow.closesAt)}
-                    </Typography>
-                    <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
-                    <Stack spacing={1}>
-                      {nextRegistrationWindow.courses.map((course) => (
-                        <Stack key={course.courseCode} spacing={0.25}>
-                          <Typography fontWeight={600}>{course.courseTitle}</Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {course.courseCode} · {course.instructor} · {course.credits} credits
-                          </Typography>
+                  <Stack spacing={2}>
+                    <Box>
+                      <Typography fontWeight={600} variant="body1" gutterBottom>
+                        {nextRegistrationWindow.semester}
+                      </Typography>
+                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                        <Chip
+                          label={nextRegistrationWindow.status.toUpperCase()}
+                          size="small"
+                          color={nextRegistrationWindow.status === 'open' ? 'success' : 'default'}
+                        />
+                        <Typography variant="body2" color="text.secondary">
+                          Opens {formatDateTime(nextRegistrationWindow.opensAt)}
+                        </Typography>
+                      </Stack>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                        Closes {formatDateTime(nextRegistrationWindow.closesAt)}
+                      </Typography>
+                    </Box>
+                    {nextRegistrationWindow.courses.length > 0 && (
+                      <>
+                        <Divider />
+                        <Stack spacing={1.5}>
+                          {nextRegistrationWindow.courses.map((course) => (
+                            <Box key={course.courseCode}>
+                              <Typography fontWeight={600} variant="body2">
+                                {course.courseTitle}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {course.courseCode} · {course.instructor} · {course.credits} credits
+                              </Typography>
+                            </Box>
+                          ))}
                         </Stack>
-                      ))}
-                    </Stack>
+                      </>
+                    )}
                   </Stack>
                 ) : (
                   <Typography variant="body2" color="text.secondary">
@@ -332,121 +274,120 @@ export default function OverviewTab({
           </Stack>
         </Grid>
 
-        <Grid item xs={12} md={4}>
+        <Grid item xs={12} lg={4}>
           <Stack spacing={3}>
             {/* Upcoming Exams */}
-            <Paper
-              elevation={0}
-              sx={{
-                p: 3,
-                backgroundColor: '#ffffff',
-                border: '1px solid',
-                borderColor: 'rgba(0, 0, 0, 0.08)'
-              }}
-            >
+            <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 3 }}>
               <Stack spacing={2}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Typography variant="h6" fontWeight={700}>
+                <Box>
+                  <Typography variant="h6" fontWeight={600} gutterBottom>
                     Upcoming exams
                   </Typography>
-                  <Chip
-                    icon={<TrendingUpRoundedIcon fontSize="small" />}
-                    label="Assessments"
-                    size="small"
-                    color="secondary"
-                    variant="outlined"
-                  />
-                </Stack>
-                <Stack spacing={1.5}>
-                  {upcomingExamList.map((exam) => (
-                    <Stack key={exam.id} spacing={0.75}>
-                      <Typography fontWeight={600}>{exam.title}</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {formatDateTime(exam.examDate)}
-                      </Typography>
-                    </Stack>
-                  ))}
-                  {!upcomingExamList.length && <Typography variant="body2">No upcoming exams posted.</Typography>}
-                </Stack>
-                {nextExam && (
-                  <Chip
-                    icon={<CalendarTodayRoundedIcon fontSize="small" />}
-                    label={`Next exam: ${formatDateTime(nextExam.examDate)}`}
-                    size="small"
-                    sx={{ alignSelf: 'flex-start', fontWeight: 600 }}
-                  />
+                  <Typography variant="body2" color="text.secondary">
+                    Review your upcoming assessments and exam dates.
+                  </Typography>
+                </Box>
+                <Divider />
+                {upcomingExamList.length > 0 ? (
+                  <Stack spacing={2}>
+                    {upcomingExamList.map((exam) => (
+                      <Box key={exam.id}>
+                        <Typography fontWeight={600} variant="body2">
+                          {exam.title}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {formatDateTime(exam.examDate)}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    No upcoming exams posted.
+                  </Typography>
                 )}
               </Stack>
             </Paper>
 
             {/* Upcoming Schedule */}
-            <Paper
-              elevation={0}
-              sx={{
-                p: 3,
-                backgroundColor: '#ffffff',
-                border: '1px solid',
-                borderColor: 'rgba(0, 0, 0, 0.08)'
-              }}
-            >
+            <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 3 }}>
               <Stack spacing={2}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Typography variant="h6" fontWeight={700}>
+                <Box>
+                  <Typography variant="h6" fontWeight={600} gutterBottom>
                     Upcoming schedule
                   </Typography>
-                  <Chip
-                    icon={<ScheduleRoundedIcon fontSize="small" />}
-                    label={`${schedule.length} event${schedule.length === 1 ? '' : 's'}`}
-                    size="small"
-                    color="info"
-                    variant="outlined"
-                  />
-                </Stack>
-                <Typography variant="body2" color="text.secondary">
-                  Stay prepared for advisor meetings, workshops, and mentorship touchpoints.
-                </Typography>
-                <Stack spacing={1.5}>
-                  {scheduleHighlights.map((item) => (
-                    <Stack key={item.id} spacing={0.75}>
-                      <Typography fontWeight={600}>{item.title}</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {formatDateTime(item.startTime)} – {formatDateTime(item.endTime)}
-                      </Typography>
-                    </Stack>
-                  ))}
-                  {!scheduleHighlights.length && <Typography variant="body2">No upcoming events yet.</Typography>}
-                </Stack>
+                  <Typography variant="body2" color="text.secondary">
+                    Stay prepared for advisor meetings, workshops, and mentorship touchpoints.
+                  </Typography>
+                </Box>
+                <Divider />
+                {scheduleHighlights.length > 0 ? (
+                  <Stack spacing={2}>
+                    {scheduleHighlights.map((item) => (
+                      <Box key={item.id}>
+                        <Typography fontWeight={600} variant="body2">
+                          {item.title}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {formatDateTime(item.startTime)} – {formatDateTime(item.endTime)}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    No upcoming events yet.
+                  </Typography>
+                )}
               </Stack>
             </Paper>
 
             {/* GPA Snapshots */}
-            <Paper
-              elevation={0}
-              sx={{
-                p: 3,
-                backgroundColor: '#ffffff',
-                border: '1px solid',
-                borderColor: 'rgba(0, 0, 0, 0.08)'
-              }}
-            >
+            <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 3 }}>
               <Stack spacing={2}>
-                <Typography variant="h6" fontWeight={700}>
-                  GPA snapshots
-                </Typography>
-                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                  {gpaHighlights.map((item) => (
-                    <Chip
-                      key={item.id}
-                      label={`${item.semester}: ${item.gpa.toFixed(2)}`}
-                      color="primary"
-                      variant="outlined"
-                    />
-                  ))}
-                  {!gpaHighlights.length && <Typography variant="body2">No GPA records yet.</Typography>}
-                </Stack>
-                {averageGpa !== null && (
+                <Box>
+                  <Typography variant="h6" fontWeight={600} gutterBottom>
+                    GPA snapshots
+                  </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Overall GPA to date: <Typography component="span" fontWeight={700}>{averageGpa.toFixed(2)}</Typography>
+                    Track your academic performance by semester.
+                  </Typography>
+                </Box>
+                <Divider />
+                {gpaHighlights.length > 0 ? (
+                  <Stack spacing={1.5}>
+                    {gpaHighlights.map((item) => (
+                      <Box key={item.id}>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography variant="body2" fontWeight={500}>
+                            {item.semester}
+                          </Typography>
+                          <Chip
+                            label={item.gpa.toFixed(2)}
+                            size="small"
+                            color="primary"
+                            variant="outlined"
+                          />
+                        </Stack>
+                      </Box>
+                    ))}
+                    {averageGpa !== null && (
+                      <>
+                        <Divider />
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography variant="body2" fontWeight={600}>
+                            Overall GPA
+                          </Typography>
+                          <Typography variant="body1" fontWeight={700} color="primary.main">
+                            {averageGpa.toFixed(2)}
+                          </Typography>
+                        </Stack>
+                      </>
+                    )}
+                  </Stack>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    No GPA records yet.
                   </Typography>
                 )}
               </Stack>
@@ -457,35 +398,29 @@ export default function OverviewTab({
 
       {/* Class Registrations and Grades */}
       <Grid container spacing={3}>
-        <Grid item xs={12} md={7}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 3,
-              backgroundColor: '#ffffff',
-              border: '1px solid',
-              borderColor: 'rgba(0, 0, 0, 0.08)'
-            }}
-          >
+        <Grid item xs={12} lg={7}>
+          <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 3 }}>
             <Stack spacing={2}>
-              <Typography variant="h6" fontWeight={700}>
-                Class registrations
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Confirm your enrolled classes, instructors, and registration status in one place.
-              </Typography>
-              <Divider sx={{ borderStyle: 'dashed' }} />
+              <Box>
+                <Typography variant="h6" fontWeight={600} gutterBottom>
+                  Class registrations
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Confirm your enrolled classes, instructors, and registration status in one place.
+                </Typography>
+              </Box>
+              <Divider />
               <TableContainer>
-                <Table size="small">
+                <Table>
                   <TableHead>
                     <TableRow>
-                      <TableCell>Class</TableCell>
-                      <TableCell>Instructor</TableCell>
-                      <TableCell>Credits</TableCell>
-                      <TableCell>Tuition</TableCell>
-                      <TableCell>Status</TableCell>
-                      <TableCell>Confirmed</TableCell>
-                      <TableCell>Registered</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Class</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Instructor</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Credits</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Tuition</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Confirmed</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>Registered</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -494,11 +429,21 @@ export default function OverviewTab({
                       const tuition = credits > 0 ? formatCurrency(credits * CREDIT_RATE) : '—';
 
                       return (
-                        <TableRow key={registration.id}>
-                          <TableCell sx={{ fontWeight: 600 }}>{registration.className}</TableCell>
-                          <TableCell>{registration.instructor ?? 'TBA'}</TableCell>
-                          <TableCell>{credits || '—'}</TableCell>
-                          <TableCell>{tuition}</TableCell>
+                        <TableRow key={registration.id} hover>
+                          <TableCell>
+                            <Typography variant="body2" fontWeight={500}>
+                              {registration.className}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">{registration.instructor ?? 'TBA'}</Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">{credits || '—'}</Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">{tuition}</Typography>
+                          </TableCell>
                           <TableCell>
                             <Chip
                               label={registration.status}
@@ -510,36 +455,28 @@ export default function OverviewTab({
                                     : 'default'
                               }
                               size="small"
-                              sx={{ textTransform: 'capitalize', fontWeight: 600 }}
+                              sx={{ textTransform: 'capitalize' }}
                             />
                           </TableCell>
                           <TableCell>
                             {registration.confirmedBy ? (
-                              <Chip
-                                label="Confirmed"
-                                size="small"
-                                color="success"
-                                variant="outlined"
-                                sx={{ fontWeight: 600 }}
-                              />
+                              <Chip label="Confirmed" size="small" color="success" variant="outlined" />
                             ) : (
-                              <Chip
-                                label="Pending"
-                                size="small"
-                                color="warning"
-                                variant="outlined"
-                                sx={{ fontWeight: 600 }}
-                              />
+                              <Chip label="Pending" size="small" color="warning" variant="outlined" />
                             )}
                           </TableCell>
-                          <TableCell>{formatDateTime(registration.registeredAt)}</TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">
+                              {formatDateTime(registration.registeredAt)}
+                            </Typography>
+                          </TableCell>
                         </TableRow>
                       );
                     })}
                     {!registrations.length && (
                       <TableRow>
                         <TableCell colSpan={7} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                          No class registrations have been submitted yet.
+                          <Typography variant="body2">No class registrations have been submitted yet.</Typography>
                         </TableCell>
                       </TableRow>
                     )}
@@ -550,106 +487,110 @@ export default function OverviewTab({
           </Paper>
         </Grid>
 
-        <Grid item xs={12} md={5}>
+        <Grid item xs={12} lg={5}>
           <Stack spacing={3}>
             {/* Grade Summary */}
-            <Paper
-              elevation={0}
-              sx={{
-                p: 3,
-                backgroundColor: '#ffffff',
-                border: '1px solid',
-                borderColor: 'rgba(0, 0, 0, 0.08)'
-              }}
-            >
+            <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 3 }}>
               <Stack spacing={2}>
-                <Typography variant="h6" fontWeight={700}>
-                  Grade summary
-                </Typography>
-                <Stack spacing={1.5}>
-                  {gradeHighlights.map((grade) => (
-                    <Stack key={grade.id} direction="row" justifyContent="space-between" alignItems="center">
-                      <Stack spacing={0.5}>
-                        <Typography fontWeight={600}>{grade.courseTitle}</Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {grade.courseCode} · {grade.semester}
-                        </Typography>
-                      </Stack>
-                      <Chip label={grade.grade} color="primary" variant="outlined" />
-                    </Stack>
-                  ))}
-                  {!gradeHighlights.length && (
-                    <Typography variant="body2" color="text.secondary">
-                      No grades published yet.
-                    </Typography>
-                  )}
-                </Stack>
+                <Box>
+                  <Typography variant="h6" fontWeight={600} gutterBottom>
+                    Grade summary
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Review your latest grades and academic performance.
+                  </Typography>
+                </Box>
+                <Divider />
+                {gradeHighlights.length > 0 ? (
+                  <Stack spacing={2}>
+                    {gradeHighlights.map((grade) => (
+                      <Box key={grade.id}>
+                        <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                          <Box>
+                            <Typography fontWeight={600} variant="body2">
+                              {grade.courseTitle}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {grade.courseCode} · {grade.semester}
+                            </Typography>
+                          </Box>
+                          <Chip label={grade.grade} size="small" color="primary" variant="outlined" />
+                        </Stack>
+                      </Box>
+                    ))}
+                  </Stack>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    No grades published yet.
+                  </Typography>
+                )}
               </Stack>
             </Paper>
 
             {/* Class Fees & Payments */}
-            <Paper
-              elevation={0}
-              sx={{
-                p: 3,
-                backgroundColor: '#ffffff',
-                border: '1px solid',
-                borderColor: 'rgba(0, 0, 0, 0.08)'
-              }}
-            >
+            <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 3 }}>
               <Stack spacing={2}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Typography variant="h6" fontWeight={700}>
-                    Class fees & payments
+                <Box>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                    <Typography variant="h6" fontWeight={600}>
+                      Class fees & payments
+                    </Typography>
+                    {outstandingFees.length > 0 && (
+                      <Chip
+                        label={`${outstandingFees.length} pending`}
+                        size="small"
+                        color="warning"
+                        variant="outlined"
+                      />
+                    )}
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary">
+                    Outstanding fees requiring payment. Paid fees are not shown.
                   </Typography>
-                  <Chip
-                    icon={<AttachMoneyRoundedIcon fontSize="small" />}
-                    label={`${outstandingFees.length} outstanding fee${outstandingFees.length === 1 ? '' : 's'}`}
-                    size="small"
-                    color={outstandingFees.length > 0 ? 'warning' : 'success'}
-                    variant="outlined"
-                  />
-                </Stack>
-                <Typography variant="body2" color="text.secondary">
-                  Outstanding fees requiring payment. Paid fees are not shown.
-                </Typography>
-                <Divider sx={{ borderStyle: 'dashed' }} />
-                <TableContainer>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Description</TableCell>
-                        <TableCell>Amount</TableCell>
-                        <TableCell>Due Date</TableCell>
-                        <TableCell>Status</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {outstandingFees.map((fee) => (
-                        <TableRow key={fee.id}>
-                          <TableCell sx={{ fontWeight: 600 }}>{fee.description ?? 'Fee'}</TableCell>
-                          <TableCell>{formatCurrency(fee.amount)}</TableCell>
-                          <TableCell>{fee.dueDate ? formatDateTime(fee.dueDate) : 'TBA'}</TableCell>
-                          <TableCell>
-                            <Chip
-                              label="Pending"
-                              size="small"
-                              color="warning"
-                              sx={{ fontWeight: 600 }}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {!outstandingFees.length && (
+                </Box>
+                <Divider />
+                {outstandingFees.length > 0 ? (
+                  <TableContainer>
+                    <Table>
+                      <TableHead>
                         <TableRow>
-                          <TableCell colSpan={4} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                            All fees have been paid. No outstanding balance.
-                          </TableCell>
+                          <TableCell sx={{ fontWeight: 600 }}>Description</TableCell>
+                          <TableCell sx={{ fontWeight: 600 }}>Amount</TableCell>
+                          <TableCell sx={{ fontWeight: 600 }}>Due Date</TableCell>
+                          <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
                         </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
+                      </TableHead>
+                      <TableBody>
+                        {outstandingFees.map((fee) => (
+                          <TableRow key={fee.id} hover>
+                            <TableCell>
+                              <Typography variant="body2" fontWeight={500}>
+                                {fee.description ?? 'Fee'}
+                              </Typography>
+                            </TableCell>
+                            <TableCell>
+                              <Typography variant="body2">{formatCurrency(fee.amount)}</Typography>
+                            </TableCell>
+                            <TableCell>
+                              <Typography variant="body2" color="text.secondary">
+                                {fee.dueDate ? formatDateTime(fee.dueDate) : 'TBA'}
+                              </Typography>
+                            </TableCell>
+                            <TableCell>
+                              <Chip label="Pending" size="small" color="warning" />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                ) : (
+                  <Box sx={{ py: 3, textAlign: 'center' }}>
+                    <Typography variant="body2" color="text.secondary">
+                      All fees have been paid. No outstanding balance.
+                    </Typography>
+                  </Box>
+                )}
               </Stack>
             </Paper>
           </Stack>
@@ -658,54 +599,14 @@ export default function OverviewTab({
 
 
       {/* Classroom Registration */}
-      <Grid container spacing={3}>
-        <Grid item xs={12}>
-          <ClassroomSelfRegistrationCard
-            studentId={student.id}
-            classrooms={availableClassrooms}
-            enrollments={classroomEnrollments}
-            studentMajor={student.primaryInterest}
-          />
-        </Grid>
-      </Grid>
-      {/* Widgets Section */}
-      {/* {widgets.length > 0 && (
-        <Box
-          sx={{
-            position: 'fixed',
-            bottom: 0,
-            right: 0,
-            zIndex: 1000,
-            width: { xs: '100%', md: '400px' },
-            maxWidth: { xs: '100%', md: '400px' },
-            height: { xs: '600px', md: '800px' },
-            maxHeight: { xs: '600px', md: '800px' },
-            overflow: 'hidden',
-            isolation: 'isolate',
-            pointerEvents: 'none',
-            '& > *': {
-              pointerEvents: 'auto',
-            },
-            '& iframe': {
-              position: 'absolute !important',
-              top: '0 !important',
-              left: '0 !important',
-              right: '0 !important',
-              bottom: '0 !important',
-              width: '100% !important',
-              maxWidth: '100% !important',
-              height: '100% !important',
-              maxHeight: '100% !important',
-              border: 'none !important',
-              display: 'block !important',
-              zIndex: '1 !important',
-              pointerEvents: 'auto',
-            },
-          }}
-          dangerouslySetInnerHTML={{ __html: widgets[0].iframe }}
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: 3 }}>
+        <ClassroomSelfRegistrationCard
+          studentId={student.id}
+          classrooms={availableClassrooms}
+          enrollments={classroomEnrollments}
+          studentMajor={student.primaryInterest}
         />
-      )} */}
-
-    </>
+      </Paper>
+    </Stack>
   );
 }

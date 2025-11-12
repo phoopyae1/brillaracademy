@@ -110,6 +110,7 @@ export type StudentDashboardData = {
     semester?: string;
     credits?: number;
     confirmedBy?: number | null;
+    courseCode?: string;
   }>;
   classroomEnrollments: ClassroomEnrollment[];
   grades: GradeRecord[];
@@ -347,6 +348,38 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
     console.error('Failed to fetch dashboard', error);
     return null;
   }
+}
+
+export async function deregisterStudentFromCourse(
+  token: string,
+  studentId: number,
+  courseCode: string
+): Promise<{ success: boolean; message: string; removed: { classRegistrations: number; teacherRosters: number; timetables: number } }> {
+  const data = await apiRequest<{
+    success: boolean;
+    message: string;
+    removed: { classRegistrations: number; teacherRosters: number; timetables: number };
+  }>(`/students/${studentId}/registrations/${encodeURIComponent(courseCode)}`, {
+    method: 'DELETE',
+    token
+  });
+
+  return data;
+}
+
+export async function deleteStudentAccount(
+  token: string,
+  studentId: number
+): Promise<{ success: boolean; message: string }> {
+  const data = await apiRequest<{
+    success: boolean;
+    message: string;
+  }>(`/students/${studentId}`, {
+    method: 'DELETE',
+    token
+  });
+
+  return data;
 }
 
 export async function listStudents(token?: string): Promise<Student[]> {

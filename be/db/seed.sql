@@ -180,8 +180,8 @@ SET student_id = EXCLUDED.student_id,
 
 INSERT INTO registration_windows (id, semester, status, opens_at, closes_at, courses)
 VALUES
-    (1, '1/2026', 'open', '2025-12-10T12:00:00Z', '2026-01-10T23:59:59Z', '[{"courseCode":"BIOE-630","courseTitle":"Neural Interface Design","instructor":"Dr. Priya Raman","credits":3},{"courseCode":"DATA-720","courseTitle":"Responsible AI Systems","instructor":"Professor Malik Chen","credits":4}]'),
-    (2, '2/2026', 'upcoming', '2026-04-15T12:00:00Z', '2026-05-10T23:59:59Z', '[{"courseCode":"BIOE-650","courseTitle":"Biomechatronics Studio","instructor":"Dr. Leila Morgan","credits":4},{"courseCode":"DATA-755","courseTitle":"Immersive Analytics Workshop","instructor":"Professor Aaron Patel","credits":3}]')
+    (1, '1/2026', 'open', '2025-11-11T12:00:00Z', '2026-01-05T23:59:59Z', '[{"courseCode":"BIOE-630","courseTitle":"Neural Interface Design","instructor":"Dr. Priya Raman","credits":3},{"courseCode":"DATA-720","courseTitle":"Responsible AI Systems","instructor":"Professor Malik Chen","credits":4}]'),
+    (2, '2/2026', 'upcoming', '2026-03-15T12:00:00Z', '2026-05-05T23:59:59Z', '[{"courseCode":"BIOE-650","courseTitle":"Biomechatronics Studio","instructor":"Dr. Leila Morgan","credits":4},{"courseCode":"DATA-755","courseTitle":"Immersive Analytics Workshop","instructor":"Professor Aaron Patel","credits":3}]')
 ON CONFLICT (id) DO UPDATE
 SET semester = EXCLUDED.semester,
     status = EXCLUDED.status,

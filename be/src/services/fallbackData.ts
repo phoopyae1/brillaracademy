@@ -2443,8 +2443,8 @@ export const fallbackRegistrationWindows: SemesterRegistration[] = [
     id: 1,
     semester: '1/2026',
     status: 'open',
-    opensAt: '2025-08-10T12:00:00Z',
-    closesAt: '2025-09-10T23:59:59Z',
+    opensAt: '2025-11-11T12:00:00Z',
+    closesAt: '2026-01-05T23:59:59Z',
     courses: [
       {
         courseCode: 'BIOE-630',
@@ -2464,8 +2464,8 @@ export const fallbackRegistrationWindows: SemesterRegistration[] = [
     id: 2,
     semester: '2/2026',
     status: 'upcoming',
-    opensAt: '2025-11-15T12:00:00Z',
-    closesAt: '2026-01-10T23:59:59Z',
+    opensAt: '2026-03-15T12:00:00Z',
+    closesAt: '2026-05-05T23:59:59Z',
     courses: [
       {
         courseCode: 'BIOE-650',

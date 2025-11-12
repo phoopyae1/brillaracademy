@@ -6,7 +6,9 @@ import {
   fetchStudentById,
   fetchStudentDashboard,
   listStudents,
-  registerStudentForSemesterCourse
+  registerStudentForSemesterCourse,
+  deregisterStudentFromCourse,
+  deleteStudent
 } from '../services/studentService.js';
 import { AVAILABLE_MAJORS, getSubjectsForMajor, listMajorsWithSubjects } from '../utils/majors.js';
 
@@ -176,6 +178,47 @@ router.post('/:id/registrations', async (req, res) => {
     return res.status(201).json({ registration });
   } catch (error: any) {
     const message = typeof error?.message === 'string' ? error.message : 'Unable to register for this course.';
+    return res.status(400).json({ error: message });
+  }
+});
+
+// IT Admin: Delete student account
+router.delete('/:id', requireStaff(['IT_ADMIN']), async (req, res) => {
+  const studentId = Number(req.params.id);
+
+  if (!Number.isFinite(studentId)) {
+    return res.status(400).json({ error: 'Invalid student ID.' });
+  }
+
+  try {
+    const result = await deleteStudent(studentId);
+    return res.json(result);
+  } catch (error: any) {
+    const message = typeof error?.message === 'string' ? error.message : 'Unable to delete student account.';
+    console.error('[StudentRoutes] Failed to delete student:', error);
+    return res.status(400).json({ error: message });
+  }
+});
+
+// IT Admin: Deregister student from a specific course
+router.delete('/:id/registrations/:courseCode', requireStaff(['IT_ADMIN']), async (req, res) => {
+  const studentId = Number(req.params.id);
+  const courseCode = req.params.courseCode;
+
+  if (!Number.isFinite(studentId)) {
+    return res.status(400).json({ error: 'Invalid student ID.' });
+  }
+
+  if (!courseCode || courseCode.trim().length === 0) {
+    return res.status(400).json({ error: 'Course code is required.' });
+  }
+
+  try {
+    const result = await deregisterStudentFromCourse(studentId, courseCode.trim());
+    return res.json(result);
+  } catch (error: any) {
+    const message = typeof error?.message === 'string' ? error.message : 'Unable to deregister student from course.';
+    console.error('[StudentRoutes] Failed to deregister student from course:', error);
     return res.status(400).json({ error: message });
   }
 });

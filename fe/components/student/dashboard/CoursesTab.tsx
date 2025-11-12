@@ -149,26 +149,60 @@ export default function CoursesTab({ registrations, timetable, fees }: CoursesTa
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Course Name</TableCell>
-                  <TableCell>Instructor</TableCell>
-                  <TableCell>Credits</TableCell>
-                  <TableCell>Tuition</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Confirmed</TableCell>
-                  <TableCell>Registered Date</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Course Name</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Instructor</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Credits</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Tuition</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Day</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Confirmed</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Registered Date</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {registrations.map((registration) => {
                   const credits = registration.credits ?? 0;
                   const tuition = credits > 0 ? formatCurrency(credits * CREDIT_RATE) : '—';
+                  
+                  // Find matching timetable entries by course name/subject
+                  const matchingTimetableEntries = timetable.filter(
+                    (entry) => entry.subject.toLowerCase().trim() === registration.className.toLowerCase().trim()
+                  );
+                  
+                  // Get unique weekdays, sorted by day order
+                  const uniqueWeekdays = Array.from(
+                    new Set(matchingTimetableEntries.map(entry => entry.weekday))
+                  ).sort((a, b) => dayOrder.indexOf(a) - dayOrder.indexOf(b));
+                  
+                  const weekdayDisplay = uniqueWeekdays.length > 0 ? uniqueWeekdays.join(', ') : null;
 
                   return (
-                    <TableRow key={registration.id}>
-                      <TableCell sx={{ fontWeight: 600 }}>{registration.className}</TableCell>
-                      <TableCell>{registration.instructor ?? 'TBA'}</TableCell>
-                      <TableCell>{credits || '—'}</TableCell>
-                      <TableCell>{tuition}</TableCell>
+                    <TableRow key={registration.id} hover>
+                      <TableCell>
+                        <Typography variant="body2" fontWeight={500}>
+                          {registration.className}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">{registration.instructor ?? 'TBA'}</Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">{credits || '—'}</Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">{tuition}</Typography>
+                      </TableCell>
+                      <TableCell>
+                        {weekdayDisplay ? (
+                          <Typography variant="body2" fontWeight={500}>
+                            {weekdayDisplay}
+                          </Typography>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            —
+                          </Typography>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Chip
                           label={registration.status}
@@ -180,36 +214,28 @@ export default function CoursesTab({ registrations, timetable, fees }: CoursesTa
                                 : 'default'
                           }
                           size="small"
-                          sx={{ textTransform: 'capitalize', fontWeight: 600 }}
+                          sx={{ textTransform: 'capitalize' }}
                         />
                       </TableCell>
                       <TableCell>
                         {registration.confirmedBy ? (
-                          <Chip
-                            label="Confirmed"
-                            size="small"
-                            color="success"
-                            variant="outlined"
-                            sx={{ fontWeight: 600 }}
-                          />
+                          <Chip label="Confirmed" size="small" color="success" variant="outlined" />
                         ) : (
-                          <Chip
-                            label="Pending"
-                            size="small"
-                            color="warning"
-                            variant="outlined"
-                            sx={{ fontWeight: 600 }}
-                          />
+                          <Chip label="Pending" size="small" color="warning" variant="outlined" />
                         )}
                       </TableCell>
-                      <TableCell>{formatDateTime(registration.registeredAt)}</TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {formatDateTime(registration.registeredAt)}
+                        </Typography>
+                      </TableCell>
                     </TableRow>
                   );
                 })}
                 {!registrations.length && (
                   <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                      No courses registered yet.
+                    <TableCell colSpan={8} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                      <Typography variant="body2">No courses registered yet.</Typography>
                     </TableCell>
                   </TableRow>
                 )}
