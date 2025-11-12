@@ -23,13 +23,14 @@ export async function recordAtenxionTransaction(
     console.log('Embedded token:', embeddedToken);
     if (embeddedToken && embeddedToken.trim().length > 0) {
       atenxionToken = embeddedToken.trim();
+      console.log('Atenxion token:', atenxionToken);
     }
   } catch {
     atenxionToken = 'asdf';
   }
 console.log('Atenxion token:', atenxionToken);
   const headers = {
-    Authorization: `Bearer ${atenxionToken}`,
+    Authorization: `${atenxionToken}`,
     'Content-Type': 'application/json',
   };
 

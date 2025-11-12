@@ -6,6 +6,53 @@ import { listStudentAssignments } from '../services/assignmentService.js';
 import { gradeToPoint } from '../services/academicService.js';
 import { requireStudent, type AuthenticatedStudentRequest } from '../middleware/requireStudent.js';
 
+function formatTimeToSingapore(time: string | null | undefined): string | null {
+  if (!time) {
+    return null;
+  }
+
+  try {
+    const date = new Date(`1970-01-01T${time}:00Z`);
+    const formatter = new Intl.DateTimeFormat('en-SG', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'Asia/Singapore'
+    });
+    return formatter.format(date);
+  } catch (error) {
+    console.warn('[AgentRoutes] Failed to format time to Singapore timezone:', error);
+    return time;
+  }
+}
+
+function formatDateTimeToSingapore(isoDateTime: string | null | undefined): { iso: string; display: string } | null {
+  if (!isoDateTime) {
+    return null;
+  }
+
+  try {
+    const date = new Date(isoDateTime);
+    const display = new Intl.DateTimeFormat('en-SG', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'Asia/Singapore'
+    }).format(date);
+
+    return {
+      iso: date.toISOString(),
+      display
+    };
+  } catch (error) {
+    console.warn('[AgentRoutes] Failed to format datetime to Singapore timezone:', error);
+    return null;
+  }
+}
+
 const router = Router();
 
 /**
@@ -100,29 +147,40 @@ router.post('/student-registrations', requireStudent(), async (req: Authenticate
       [id]
     );
 
-    const detailedRegistrations = rows.map((row: any) => ({
+    const detailedRegistrations = rows.map((row: any) => {
+      const registeredAtSingapore = formatDateTimeToSingapore(row.registeredAt);
+      return {
         id: row.id,
         studentId: row.studentId,
         className: row.className,
-      courseCode: row.courseCode || null,
-      instructor: row.instructor || row.teacherName || null,
-      teacherName: row.teacherName || row.instructor || null,
-      status: row.status,
-      isConfirmed: row.confirmedBy !== null,
-      confirmedBy: row.confirmedBy,
-      confirmedByName: row.confirmedByName || null,
-      semester: row.semester || row.teachingSemester || null,
+        courseCode: row.courseCode || null,
+        instructor: row.instructor || row.teacherName || null,
+        teacherName: row.teacherName || row.instructor || null,
+        status: row.status,
+        isConfirmed: row.confirmedBy !== null,
+        confirmedBy: row.confirmedBy,
+        confirmedByName: row.confirmedByName || null,
+        semester: row.semester || row.teachingSemester || null,
         credits: row.credits,
-      registeredAt: row.registeredAt,
-      weekday: row.weekday || null,
-      startTime: row.startTime || null,
-      endTime: row.endTime || null,
-      classroomName: row.classroomName || null,
-      classroomLocation: row.classroomLocation || null,
-      studentGroup: row.studentGroup || null
-    }));
+        registeredAt: row.registeredAt,
+        registeredAtSingapore: registeredAtSingapore,
+        weekday: row.weekday || null,
+        startTime: row.startTime || null,
+        endTime: row.endTime || null,
+        startTimeSingapore: formatTimeToSingapore(row.startTime) || null,
+        endTimeSingapore: formatTimeToSingapore(row.endTime) || null,
+        classroomName: row.classroomName || null,
+        classroomLocation: row.classroomLocation || null,
+        studentGroup: row.studentGroup || null
+      };
+    });
 
-    return res.json(detailedRegistrations);
+    const generatedAt = formatDateTimeToSingapore(new Date().toISOString());
+
+    return res.json({
+      generatedAtSingapore: generatedAt,
+      registrations: detailedRegistrations
+    });
   } catch (error) {
     console.error('[Agent] Error fetching student registrations:', error);
     return res.status(500).json({ error: 'Failed to fetch student registrations.' });
@@ -607,7 +665,7 @@ router.post('/register-course', requireStudent(), async (req: AuthenticatedStude
               sa.display_name AS teacher_name
        FROM teaching_assignments ta
        LEFT JOIN staff_accounts sa ON ta.teacher_id = sa.id
-       WHERE ta.course_code = $1 
+       WHERE UPPER(ta.course_code) = UPPER($1) 
          AND LOWER(TRIM(ta.weekday)) = LOWER(TRIM($2)) 
          AND to_char(ta.start_time, 'HH24:MI') = $3`,
       [courseCode.trim(), weekday.trim(), normalizedStartTime]
@@ -618,7 +676,7 @@ router.post('/register-course', requireStudent(), async (req: AuthenticatedStude
       const { rows: courseRows } = await pool.query(
         `SELECT ta.course_code, ta.weekday, to_char(ta.start_time, 'HH24:MI') AS start_time
          FROM teaching_assignments ta
-         WHERE ta.course_code = $1`,
+         WHERE UPPER(ta.course_code) = UPPER($1)`,
         [courseCode.trim()]
       );
       
@@ -641,7 +699,49 @@ router.post('/register-course', requireStudent(), async (req: AuthenticatedStude
     }
 
     const course = rows[0];
-    
+
+    // Hard stop: prevent agents from re-validating courses the student already confirmed
+    const { rows: existingRoster } = await pool.query(
+      `SELECT tr.id,
+              to_char(ta.start_time, 'HH24:MI') AS start_time,
+              ta.weekday
+       FROM teacher_rosters tr
+       LEFT JOIN teaching_assignments ta
+         ON ta.course_code = tr.course_code
+        AND ta.teacher_id = tr.teacher_id
+       WHERE tr.student_id = $1
+         AND tr.course_code = $2
+       LIMIT 1`,
+      [id, courseCode.trim()]
+    );
+
+    if (existingRoster.length > 0) {
+      const slot = existingRoster[0];
+      const existingSummary = slot?.weekday && slot?.start_time
+        ? `${slot.weekday} at ${slot.start_time}`
+        : 'an earlier confirmed slot';
+      return res.status(409).json({
+        error: `Student already registered for ${course.course_title} (${course.course_code}) on ${existingSummary}.`
+      });
+    }
+
+    const { rows: existingTimetable } = await pool.query(
+      `SELECT id
+       FROM timetables
+       WHERE student_id = $1
+         AND LOWER(TRIM(subject)) = LOWER(TRIM($2))
+         AND to_char(start_time, 'HH24:MI') = $3
+         AND LOWER(TRIM(weekday)) = LOWER(TRIM($4))
+       LIMIT 1`,
+      [id, course.course_title, course.start_time, course.weekday]
+    );
+
+    if (existingTimetable.length > 0) {
+      return res.status(409).json({
+        error: `Student already has ${course.course_title} scheduled on ${course.weekday} at ${course.start_time}.`
+      });
+    }
+
     // Validate major matches
     if (course.major_focus?.trim().toLowerCase() !== major.trim().toLowerCase()) {
       return res.status(400).json({ 
@@ -649,11 +749,21 @@ router.post('/register-course', requireStudent(), async (req: AuthenticatedStude
       });
     }
 
-    // Register student for the course with specific weekday and time
-    // This ensures conflict checking uses the correct time slot, not just any slot for the course
-    return res.status(409).json({
-      error:
-        'Teacher assignments do not reserve seats automatically. Please ask the student to confirm via the portal.'
+    return res.status(200).json({
+      message: 'Course slot validated. Please ask the student to confirm via the portal.',
+      course: {
+        courseCode: course.course_code,
+        courseTitle: course.course_title,
+        majorFocus: course.major_focus,
+        weekday: course.weekday,
+        startTime: course.start_time,
+        endTime: course.end_time,
+        teacherName: course.teacher_name,
+        classroomId: course.classroom_id,
+        startTimeSingapore: formatTimeToSingapore(course.start_time),
+        endTimeSingapore: formatTimeToSingapore(course.end_time)
+      },
+      generatedAtSingapore: formatDateTimeToSingapore(new Date().toISOString())
     });
   } catch (error: any) {
     const message = typeof error?.message === 'string' ? error.message : 'Unable to register for this course right now.';
