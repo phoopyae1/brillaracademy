@@ -43,7 +43,8 @@ const CREDIT_RATE = 100;
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat('en-US', {
     dateStyle: 'medium',
-    timeStyle: 'short'
+    timeStyle: 'short',
+    timeZone: 'Asia/Singapore'
   }).format(new Date(value));
 }
 

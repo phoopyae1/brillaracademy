@@ -22,7 +22,8 @@ type TimetableEntry = StudentDashboardData['timetable'][0];
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat('en-US', {
     dateStyle: 'medium',
-    timeStyle: 'short'
+    timeStyle: 'short',
+    timeZone: 'Asia/Singapore'
   }).format(new Date(value));
 }
 

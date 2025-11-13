@@ -42,13 +42,15 @@ type AssignmentsTabProps = {
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat('en-US', {
     dateStyle: 'medium',
-    timeStyle: 'short'
+    timeStyle: 'short',
+    timeZone: 'Asia/Singapore'
   }).format(new Date(value));
 }
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('en-US', {
-    dateStyle: 'medium'
+    dateStyle: 'medium',
+    timeZone: 'Asia/Singapore'
   }).format(new Date(value));
 }
 
