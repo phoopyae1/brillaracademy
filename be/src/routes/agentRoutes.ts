@@ -28,7 +28,21 @@ function formatTimeToSingapore(time: string | null | undefined): string | null {
   }
 }
 
-function formatDateTimeToSingapore(isoDateTime: string | null | undefined): { iso: string; display: string } | null {
+function getDayName(date: Date): string {
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  return days[date.getDay()];
+}
+
+function formatDate(date: Date): string {
+  return new Intl.DateTimeFormat('en-SG', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'Asia/Singapore'
+  }).format(date);
+}
+
+function formatDateTimeToSingapore(isoDateTime: string | null | undefined): { iso: string; display: string; date: string; dayName: string } | null {
   if (!isoDateTime) {
     return null;
   }
@@ -47,7 +61,9 @@ function formatDateTimeToSingapore(isoDateTime: string | null | undefined): { is
 
     return {
       iso: date.toISOString(),
-      display
+      display,
+      date: formatDate(date),
+      dayName: getDayName(date)
     };
   } catch (error) {
     console.warn('[AgentRoutes] Failed to format datetime to Singapore timezone:', error);
@@ -151,6 +167,8 @@ router.post('/student-registrations', requireStudent(), async (req: Authenticate
 
     const detailedRegistrations = rows.map((row: any) => {
       const registeredAtSingapore = formatDateTimeToSingapore(row.registeredAt);
+      const registeredDate = row.registeredAt ? new Date(row.registeredAt) : null;
+      
       return {
         id: row.id,
         studentId: row.studentId,
@@ -166,7 +184,10 @@ router.post('/student-registrations', requireStudent(), async (req: Authenticate
         credits: row.credits,
         registeredAt: row.registeredAt,
         registeredAtSingapore: registeredAtSingapore,
+        registeredDate: registeredDate ? formatDate(registeredDate) : null,
+        registeredDayName: registeredDate ? getDayName(registeredDate) : null,
         weekday: row.weekday || null,
+        weekdayName: row.weekday || null, // e.g., "Monday", "Tuesday", "Thursday", "Friday"
         startTime: row.startTime || null,
         endTime: row.endTime || null,
         startTimeSingapore: formatTimeToSingapore(row.startTime) || null,
