@@ -74,6 +74,11 @@ export default function IntegrationPage() {
         setSuccess('Integration saved successfully!');
         form.resetForm();
         await fetchIntegrations();
+        
+        // Dispatch custom event to notify WidgetContainer to refresh
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('integration-updated'));
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred');
       } finally {

@@ -67,7 +67,7 @@ export async function listIntegrations(): Promise<Integration[]> {
   }
 
   const collection = db.collection<Integration>('integrations');
-  return collection.find({}).sort({ createdAt: -1 }).toArray();
+  return collection.find({}).sort({ updatedAt: -1, createdAt: -1 }).toArray();
 }
 
 /**

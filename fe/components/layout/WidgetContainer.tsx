@@ -200,9 +200,19 @@ export default function WidgetContainer() {
       try {
         const integrations = await listIntegrations();
         const studentId = getStudentIdFromClient();
-        const prepared = integrations
-          .map((integration) => prepareIntegrationWidget(integration, studentId))
-          .filter((widget): widget is PreparedWidget => widget !== null);
+        
+        // Sort integrations by updatedAt (most recent first) or createdAt as fallback
+        const sortedIntegrations = [...integrations].sort((a, b) => {
+          const aDate = a.updatedAt ? new Date(a.updatedAt).getTime() : new Date(a.createdAt).getTime();
+          const bDate = b.updatedAt ? new Date(b.updatedAt).getTime() : new Date(b.createdAt).getTime();
+          return bDate - aDate; // Most recent first
+        });
+        
+        // Only use the latest integration
+        const latestIntegration = sortedIntegrations[0];
+        const prepared = latestIntegration
+          ? [prepareIntegrationWidget(latestIntegration, studentId)].filter((widget): widget is PreparedWidget => widget !== null)
+          : [];
 
         if (!mounted) return;
         setWidgets(prepared);
@@ -224,11 +234,17 @@ export default function WidgetContainer() {
       loadWidgets();
     };
 
+    const handleIntegrationUpdate = () => {
+      loadWidgets();
+    };
+
     window.addEventListener("storage", handleStorageChange);
+    window.addEventListener("integration-updated", handleIntegrationUpdate);
 
     return () => {
       mounted = false;
       window.removeEventListener("storage", handleStorageChange);
+      window.removeEventListener("integration-updated", handleIntegrationUpdate);
     };
   }, []);
 
@@ -283,26 +299,28 @@ export default function WidgetContainer() {
           <CircularProgress />
         </Box>
       ) : (
-        widgets.map((widget, index) => {
+        widgets.length > 0 && (() => {
+          const widget = widgets[0]; // Only show the latest widget
           const loadingAttr: "lazy" | "eager" =
             widget.loading === "eager" ? "eager" : "lazy";
 
           return (
-        <Box
-              key={widget.key ?? `integration-${index}`}
-          sx={{
-            width: "100%",
-            height: "100%",
-            overflow: "hidden",
-            position: "relative",
-            zIndex: 1,
-            isolation: "isolate",
+            <Box
+              key={`${widget.key}-${widget.src}`} // Include src in key to force remount when it changes
+              sx={{
+                width: "100%",
+                height: "100%",
+                overflow: "hidden",
+                position: "relative",
+                zIndex: 1,
+                isolation: "isolate",
                 contain: "layout style paint size"
               }}
             >
               <iframe
+                key={`iframe-${widget.key}-${widget.src}`} // Force remount iframe when src changes
                 src={widget.src}
-                title={widget.title ?? `integration-widget-${index}`}
+                title={widget.title ?? `integration-widget`}
                 allow={widget.allow ?? "camera; microphone; autoplay; encrypted-media"}
                 loading={loadingAttr}
                 style={{
@@ -313,10 +331,10 @@ export default function WidgetContainer() {
                   minHeight: widget.minHeight,
                   ...widget.style
                 }}
-        />
+              />
             </Box>
           );
-        })
+        })()
       )}
     </Box>
   );
