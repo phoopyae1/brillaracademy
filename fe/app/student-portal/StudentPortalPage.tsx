@@ -4,6 +4,9 @@ import Paper from '@mui/material/Paper';
 import Container from '@mui/material/Container';
 import { redirect } from 'next/navigation';
 import { fetchStudentDashboard, listAvailableClassrooms } from '@/lib/db';
+
+export const revalidate = 0;
+export const dynamic = 'force-dynamic';
 import StudentDashboard from '@/components/student/StudentDashboard';
 
 type StudentPortalPageProps = {

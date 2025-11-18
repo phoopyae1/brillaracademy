@@ -54,6 +54,7 @@ function formatCurrency(value: number) {
 
 interface OverviewTabProps {
   student: Student;
+  currentSemester?: string;
   timetable: TimetableEntry[];
   schedule: ScheduleEntry[];
   registrations: ClassRegistration[];

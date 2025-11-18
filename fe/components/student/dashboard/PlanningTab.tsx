@@ -28,6 +28,7 @@ function formatDateTime(value: string) {
 }
 
 interface PlanningTabProps {
+  currentSemester?: string;
   schedule: ScheduleEntry[];
   registrationWindows: RegistrationWindow[];
   timetable: TimetableEntry[];

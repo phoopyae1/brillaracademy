@@ -1,6 +1,9 @@
 import { redirect } from 'next/navigation';
 import StudentPortalPage from '../StudentPortalPage';
 
+export const revalidate = 0;
+export const dynamic = 'force-dynamic';
+
 export const metadata = {
   title: 'Student Portal | Brillar Academy',
   description: 'Review your personal timetable, upcoming milestones, and active class registrations.'

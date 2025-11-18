@@ -136,12 +136,25 @@ router.post('/public/self-register', async (req, res) => {
 router.get('/:id/dashboard', async (req, res) => {
   const studentId = Number(req.params.id);
 
-  const dashboard = await fetchStudentDashboard(studentId);
-  if (!dashboard) {
-    return res.status(404).json({ error: 'Student dashboard not found.' });
+  if (!Number.isFinite(studentId)) {
+    return res.status(400).json({ error: 'Invalid student ID.' });
   }
 
-  return res.json({ dashboard });
+  try {
+    const dashboard = await fetchStudentDashboard(studentId);
+    if (!dashboard) {
+      console.error(`[StudentRoutes] Dashboard not found for student ID: ${studentId}`);
+      return res.status(404).json({ error: 'Student dashboard not found.' });
+    }
+
+    return res.json({ dashboard });
+  } catch (error: any) {
+    console.error(`[StudentRoutes] Error fetching dashboard for student ${studentId}:`, error);
+    return res.status(500).json({ 
+      error: 'Failed to fetch student dashboard.',
+      details: process.env.NODE_ENV === 'development' ? error?.message : undefined
+    });
+  }
 });
 
 router.get('/:id', requireStaff(), async (req, res) => {

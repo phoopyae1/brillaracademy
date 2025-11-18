@@ -24,9 +24,10 @@ import {
 } from './academicService.js';
 import { listStudentFeePayments, recordFeePayment } from './financeService.js';
 import { listClassroomEnrollmentsForStudent } from './classroomService.js';
-import { listStudentAssignments } from './assignmentService.js';
+import type { ClassroomEnrollment } from './types.js';
+import { listStudentAssignments, type StudentAssignment } from './assignmentService.js';
 import { getCourseMetadata, getSubjectsForMajor } from '../utils/majors.js';
-import { getCurrentSemester } from './systemService.js';
+import { getCurrentSemester, isRegistrationPeriodOpen, getRegistrationStatus } from './systemService.js';
 
 type StudentSubjectSelection = {
   studentId: number;
@@ -143,17 +144,24 @@ export async function listStudents(): Promise<Student[]> {
 
 export async function fetchStudentById(id: number): Promise<Student | null> {
   if (!Number.isFinite(id)) {
+    console.warn(`[StudentService] fetchStudentById called with invalid ID: ${id}`);
     return null;
   }
 
   const pool = getPool();
+  console.log(`[StudentService] fetchStudentById called for ID: ${id}, pool available: ${!!pool}`);
 
   if (!pool) {
+    console.log('[StudentService] Using in-memory student lookup');
     const student = inMemoryStudents.find((item) => item.id === id) ?? null;
+    if (!student) {
+      console.warn(`[StudentService] Student not found in memory for ID: ${id}`);
+    }
     return student ? applySubjectSelection(student) : null;
   }
 
   try {
+    console.log(`[StudentService] Querying database for student ID: ${id}`);
     const { rows } = await pool.query(
       `SELECT id, first_name, last_name, email, role, primary_interest, created_at
        FROM students
@@ -162,13 +170,91 @@ export async function fetchStudentById(id: number): Promise<Student | null> {
     );
 
     if (!rows.length) {
+      console.warn(`[StudentService] No student found in database for ID: ${id}`);
       return null;
     }
 
+    console.log(`[StudentService] Found student in database: ID ${rows[0].id}, email: ${rows[0].email}`);
     return applySubjectSelection(normalizeStudent(rows[0]));
   } catch (error) {
-    console.error('Failed to fetch student by id', error);
+    console.error(`[StudentService] Error fetching student by ID ${id}:`, error);
+    console.error('Error details:', error instanceof Error ? error.stack : error);
     return null;
+  }
+}
+
+async function filterAssignmentsBySemester(
+  assignments: StudentAssignment[],
+  currentSemester: string,
+  pool: any
+): Promise<StudentAssignment[]> {
+  if (!pool || assignments.length === 0) {
+    return assignments;
+  }
+
+  try {
+    // Get semester for each course code from teaching_assignments
+    const courseCodes = [...new Set(assignments.map(a => a.courseCode))];
+    if (courseCodes.length === 0) {
+      return assignments;
+    }
+
+    const { rows } = await pool.query(
+      `SELECT DISTINCT course_code, semester
+       FROM teaching_assignments
+       WHERE course_code = ANY($1)`,
+      [courseCodes]
+    );
+
+    const courseSemesterMap = new Map<string, string>();
+    for (const row of rows) {
+      if (!courseSemesterMap.has(row.course_code)) {
+        courseSemesterMap.set(row.course_code, row.semester);
+      }
+    }
+
+    // Filter assignments by current semester - only show assignments for current semester
+    return assignments.filter(assignment => {
+      const assignmentSemester = courseSemesterMap.get(assignment.courseCode);
+      return assignmentSemester === currentSemester;
+    });
+  } catch (error) {
+    console.error('Failed to filter assignments by semester', error);
+    return assignments; // Return all if filtering fails
+  }
+}
+
+async function filterClassroomEnrollmentsBySemester(
+  enrollments: ClassroomEnrollment[],
+  currentSemester: string,
+  pool: any
+): Promise<ClassroomEnrollment[]> {
+  if (!pool || enrollments.length === 0) {
+    return enrollments;
+  }
+
+  try {
+    // Get classroom IDs
+    const classroomIds = enrollments.map(e => e.classroomId);
+    if (classroomIds.length === 0) {
+      return enrollments;
+    }
+
+    // Get teaching assignments for these classrooms in current semester
+    const { rows } = await pool.query(
+      `SELECT DISTINCT classroom_id
+       FROM teaching_assignments
+       WHERE classroom_id = ANY($1) AND semester = $2`,
+      [classroomIds, currentSemester]
+    );
+
+    const validClassroomIds = new Set(rows.map((r: any) => r.classroom_id));
+    
+    // Filter enrollments to only those in classrooms with current semester courses
+    return enrollments.filter(enrollment => validClassroomIds.has(enrollment.classroomId));
+  } catch (error) {
+    console.error('Failed to filter classroom enrollments by semester', error);
+    return enrollments; // Return all if filtering fails
   }
 }
 
@@ -332,48 +418,76 @@ export async function createStudent(input: CreateStudentInput): Promise<Student>
 
 export async function authenticateStudent(email: string, password: string): Promise<Student | null> {
   const pool = getPool();
+  console.log(`[StudentService] Authenticating student with email: ${email}, pool available: ${!!pool}`);
 
   if (!pool) {
+    console.log('[StudentService] Using in-memory authentication');
     const student = inMemoryStudents.find((item) => item.email === email);
     if (!student) {
+      console.warn(`[StudentService] Student not found in memory for email: ${email}`);
       return null;
     }
 
     const expectedHash = inMemorySecrets.get(student.id);
-    return expectedHash && bcrypt.compareSync(password, expectedHash) ? applySubjectSelection(student) : null;
+    const passwordMatches = expectedHash && bcrypt.compareSync(password, expectedHash);
+    if (!passwordMatches) {
+      console.warn(`[StudentService] Password mismatch for email: ${email}`);
+      return null;
+    }
+    console.log(`[StudentService] In-memory authentication successful for email: ${email}`);
+    return applySubjectSelection(student);
   }
 
   try {
+    console.log(`[StudentService] Querying database for student with email: ${email}`);
     const { rows } = await pool.query(
       `SELECT id, first_name, last_name, email, role, primary_interest, created_at, password_hash
        FROM students
-       WHERE email = $1`,
+       WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))`,
       [email]
     );
 
     if (!rows.length) {
+      console.warn(`[StudentService] No student found in database for email: ${email}`);
       return null;
     }
 
     const [row] = rows;
-    const passwordMatches = await bcrypt.compare(password, row.password_hash);
-    if (!passwordMatches) {
+    console.log(`[StudentService] Found student in database: ID ${row.id}, email: ${row.email}`);
+    
+    if (!row.password_hash) {
+      console.error(`[StudentService] No password hash found for student ID: ${row.id}, email: ${email}`);
       return null;
     }
 
-    return applySubjectSelection(normalizeStudent(row));
+    const passwordMatches = await bcrypt.compare(password, row.password_hash);
+    if (!passwordMatches) {
+      console.warn(`[StudentService] Password mismatch for email: ${email}`);
+      return null;
+    }
+
+    console.log(`[StudentService] Password match confirmed for email: ${email}`);
+    const normalizedStudent = normalizeStudent(row);
+    console.log(`[StudentService] Normalized student:`, { id: normalizedStudent.id, email: normalizedStudent.email, firstName: normalizedStudent.firstName });
+    const studentWithSubjects = applySubjectSelection(normalizedStudent);
+    console.log(`[StudentService] Student with subjects applied:`, { id: studentWithSubjects.id, email: studentWithSubjects.email, selectedSubjectsCount: studentWithSubjects.selectedSubjects?.length || 0 });
+    console.log(`[StudentService] Authentication successful for email: ${email}, ID: ${studentWithSubjects.id}`);
+    return studentWithSubjects;
   } catch (error) {
-    console.error('Failed to authenticate student', error);
+    console.error(`[StudentService] Error authenticating student with email "${email}":`, error);
+    console.error('Error details:', error instanceof Error ? error.stack : error);
     return null;
   }
 }
 
 export async function fetchStudentDashboard(studentId: number): Promise<StudentDashboardData | null> {
   if (!Number.isFinite(studentId)) {
+    console.error(`[StudentService] Invalid student ID: ${studentId}`);
     return null;
   }
 
   const pool = getPool();
+  console.log(`[StudentService] Fetching dashboard for student ${studentId}, pool available: ${!!pool}`);
 
   if (!pool) {
     const student = inMemoryStudents.find((item) => item.id === studentId);
@@ -382,6 +496,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
     }
 
     console.log(`[StudentService] Fetching dashboard data for student ${studentId}`);
+    const currentSemester = await getCurrentSemester();
     const [grades, exams, gpaBySemester, registrationWindows, fees, classroomEnrollments, assignments] = await Promise.all([
       listStudentGrades(studentId),
       listExamAnnouncements(),
@@ -455,65 +570,169 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       }
     }
 
+    // Filter by current semester in in-memory mode - only show registrations for current semester
+    const filteredRegistrations = inMemoryRegistrations.filter(
+      (entry) => entry.studentId === studentId && entry.semester === currentSemester
+    );
+    const filteredAssignments = assignments.filter((assignment) => {
+      // In in-memory mode, we can't easily check semester from assignments
+      // So we'll filter by checking if the course is in current semester registrations
+      return filteredRegistrations.some(reg => 
+        reg.className.toLowerCase().includes(assignment.courseTitle.toLowerCase()) ||
+        reg.className.toLowerCase().includes(assignment.courseCode.toLowerCase())
+      );
+    });
+
     return {
       student: applySubjectSelection(student),
+      currentSemester,
       timetable: inMemoryTimetables.filter((entry) => entry.studentId === studentId),
       schedule: inMemorySchedules.filter((entry) => entry.studentId === studentId),
-      registrations: inMemoryRegistrations.filter((entry) => entry.studentId === studentId),
+      registrations: filteredRegistrations,
       classroomEnrollments,
       grades,
       upcomingExams,
       gpaBySemester,
       registrationWindows: filteredRegistrationWindows,
       fees,
-      assignments
+      assignments: filteredAssignments
     };
   }
 
   try {
     const student = await fetchStudentById(studentId);
     if (!student) {
+      console.error(`[StudentService] Student not found for ID: ${studentId}`);
       return null;
     }
+    console.log(`[StudentService] Found student: ${student.email} (ID: ${student.id})`);
 
-    const [timetableResult, scheduleResult, registrationsResult] = await Promise.all([
-      pool.query<TimetableEntry>(
-        `SELECT id, student_id AS "studentId", weekday, to_char(start_time, 'HH24:MI') AS "startTime",
-                to_char(end_time, 'HH24:MI') AS "endTime", subject, location
-         FROM timetables
-         WHERE student_id = $1
-         ORDER BY CASE weekday
-           WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6 ELSE 7 END,
-           start_time ASC`,
-        [studentId]
-      ),
-      pool.query<ScheduleItem>(
-        `SELECT id, student_id AS "studentId", title, description,
-                to_char(start_time AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "startTime",
-                to_char(end_time AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "endTime"
-         FROM schedules
-         WHERE student_id = $1
-         ORDER BY start_time ASC`,
-        [studentId]
-      ),
-      pool.query<ClassRegistration & { courseCode?: string }>(
-        `SELECT * FROM (
-           SELECT DISTINCT ON (cr.id)
-                  cr.id, cr.student_id AS "studentId", cr.class_name AS "className", cr.instructor, cr.status,
-                  cr.semester, cr.credits, cr.confirmed_by AS "confirmedBy",
-                  to_char(cr.registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "registeredAt",
-                  COALESCE(tr.course_code, ta.course_code) AS "courseCode"
-           FROM class_registrations cr
-           LEFT JOIN teacher_rosters tr ON tr.student_id = cr.student_id 
-             AND LOWER(TRIM(tr.course_title)) = LOWER(TRIM(cr.class_name))
-           LEFT JOIN teaching_assignments ta ON LOWER(TRIM(ta.course_title)) = LOWER(TRIM(cr.class_name))
-           WHERE cr.student_id = $1
-           ORDER BY cr.id, COALESCE(tr.course_code, ta.course_code) NULLS LAST, cr.registered_at DESC
-         ) AS registrations
-         ORDER BY "registeredAt" DESC`,
-        [studentId]
-      )
-    ]);
+    // Get current semester to filter all data
+    // If this fails, default to '1/2026' to ensure dashboard still loads
+    let currentSemester = '1/2026';
+    try {
+      currentSemester = await getCurrentSemester();
+      console.log(`[StudentService] Current semester set by admin: ${currentSemester}`);
+    } catch (error) {
+      console.error('Failed to get current semester, using default:', error);
+      // Continue with default semester
+    }
+
+    console.log(`[StudentService] Filtering dashboard data for student ${studentId} - ONLY showing courses for semester: ${currentSemester}`);
+    console.log(`[StudentService] Pool available: ${!!pool}, Pool type: ${pool ? 'PostgreSQL' : 'null (in-memory mode)'}`);
+    
+    let timetableResult, scheduleResult, registrationsResult;
+    try {
+      // First, let's check if registrations exist at all for this student
+      if (pool) {
+        const testQuery = await pool.query(
+          `SELECT id, class_name, semester, status FROM class_registrations WHERE student_id = $1`,
+          [studentId]
+        );
+        console.log(`[StudentService] DEBUG: Found ${testQuery.rows.length} total registrations for student ${studentId} (before semester filter):`, testQuery.rows.map(r => ({ id: r.id, class_name: r.class_name, semester: r.semester })));
+        
+        // Test the actual registrations query
+        const testRegQuery = await pool.query(
+          `SELECT * FROM (
+             SELECT DISTINCT ON (cr.id)
+                    cr.id, cr.student_id AS "studentId", cr.class_name AS "className", cr.instructor, cr.status,
+                    cr.semester, cr.credits, cr.confirmed_by AS "confirmedBy",
+                    to_char(cr.registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "registeredAt",
+                    COALESCE(tr.course_code, ta.course_code) AS "courseCode"
+             FROM class_registrations cr
+             LEFT JOIN teacher_rosters tr ON tr.student_id = cr.student_id 
+               AND LOWER(TRIM(tr.course_title)) = LOWER(TRIM(cr.class_name))
+             LEFT JOIN teaching_assignments ta ON LOWER(TRIM(ta.course_title)) = LOWER(TRIM(cr.class_name))
+               AND ta.semester = $2
+             WHERE cr.student_id = $1
+               AND (cr.semester = $2 OR (cr.semester IS NULL AND ta.semester = $2))
+             ORDER BY cr.id, COALESCE(tr.course_code, ta.course_code) NULLS LAST, cr.registered_at DESC
+           ) AS registrations
+           ORDER BY "registeredAt" DESC`,
+          [studentId, currentSemester]
+        );
+        console.log(`[StudentService] DEBUG: Registrations query returned ${testRegQuery.rows.length} rows for semester ${currentSemester}:`, testRegQuery.rows.map(r => ({ id: r.id, className: r.className, semester: r.semester, courseCode: r.courseCode })));
+      } else {
+        console.error(`[StudentService] ERROR: Pool is null! Cannot query database.`);
+      }
+      
+      [timetableResult, scheduleResult, registrationsResult] = await Promise.all([
+        pool.query<TimetableEntry>(
+          `SELECT t.id, t.student_id AS "studentId", t.weekday, 
+                  to_char(t.start_time, 'HH24:MI') AS "startTime",
+                  to_char(t.end_time, 'HH24:MI') AS "endTime", t.subject, t.location
+           FROM timetables t
+           WHERE t.student_id = $1
+             AND (
+               -- Show if there's a class registration for current semester (primary check)
+               EXISTS (
+                 SELECT 1 FROM class_registrations cr 
+                 WHERE cr.student_id = t.student_id 
+                   AND LOWER(TRIM(cr.class_name)) = LOWER(TRIM(t.subject))
+                   AND cr.semester = $2
+               )
+               -- OR if there's a matching teaching assignment for current semester
+               OR EXISTS (
+                 SELECT 1 FROM teaching_assignments ta
+                 WHERE LOWER(TRIM(ta.course_title)) = LOWER(TRIM(t.subject))
+                   AND ta.weekday = t.weekday
+                   AND to_char(ta.start_time, 'HH24:MI') = to_char(t.start_time, 'HH24:MI')
+                   AND ta.semester = $2
+               )
+               -- OR if no semester info available at all (backward compatibility)
+               OR (
+                 NOT EXISTS (
+                   SELECT 1 FROM class_registrations cr2 
+                   WHERE cr2.student_id = t.student_id 
+                     AND LOWER(TRIM(cr2.class_name)) = LOWER(TRIM(t.subject))
+                 )
+                 AND NOT EXISTS (
+                   SELECT 1 FROM teaching_assignments ta2
+                   WHERE LOWER(TRIM(ta2.course_title)) = LOWER(TRIM(t.subject))
+                     AND ta2.weekday = t.weekday
+                     AND to_char(ta2.start_time, 'HH24:MI') = to_char(t.start_time, 'HH24:MI')
+                 )
+               )
+             )
+           ORDER BY CASE t.weekday
+             WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6 ELSE 7 END,
+             to_char(t.start_time, 'HH24:MI') ASC`,
+          [studentId, currentSemester]
+        ),
+        pool.query<ScheduleItem>(
+          `SELECT id, student_id AS "studentId", title, description,
+                  to_char(start_time AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "startTime",
+                  to_char(end_time AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "endTime"
+           FROM schedules
+           WHERE student_id = $1
+           ORDER BY start_time ASC`,
+          [studentId]
+        ),
+        pool.query<ClassRegistration & { courseCode?: string }>(
+          `SELECT * FROM (
+             SELECT DISTINCT ON (cr.id)
+                    cr.id, cr.student_id AS "studentId", cr.class_name AS "className", cr.instructor, cr.status,
+                    cr.semester, cr.credits, cr.confirmed_by AS "confirmedBy",
+                    to_char(cr.registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "registeredAt",
+                    COALESCE(tr.course_code, ta.course_code) AS "courseCode"
+             FROM class_registrations cr
+             LEFT JOIN teacher_rosters tr ON tr.student_id = cr.student_id 
+               AND LOWER(TRIM(tr.course_title)) = LOWER(TRIM(cr.class_name))
+             LEFT JOIN teaching_assignments ta ON LOWER(TRIM(ta.course_title)) = LOWER(TRIM(cr.class_name))
+               AND ta.semester = $2
+             WHERE cr.student_id = $1
+               AND (cr.semester = $2 OR (cr.semester IS NULL AND ta.semester = $2))
+             ORDER BY cr.id, COALESCE(tr.course_code, ta.course_code) NULLS LAST, cr.registered_at DESC
+           ) AS registrations
+           ORDER BY "registeredAt" DESC`,
+          [studentId, currentSemester]
+        )
+      ]);
+      console.log(`[StudentService] Queries completed - timetable: ${timetableResult.rows.length}, schedule: ${scheduleResult.rows.length}, registrations: ${registrationsResult.rows.length}`);
+    } catch (queryError) {
+      console.error(`[StudentService] Error executing initial queries:`, queryError);
+      throw queryError; // Re-throw to be caught by outer try-catch
+    }
 
     // Check if student has classroom enrollments but missing class registrations
     // This can happen if they enrolled before the auto-enrollment code was added
@@ -635,18 +854,47 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       }
     }
 
-    const [grades, exams, gpaBySemester, registrationWindows, fees, classroomEnrollments, assignments] = await Promise.all([
-      listStudentGrades(studentId),
-      listExamAnnouncements(),
-      listStudentSemesterGpa(studentId),
-      listRegistrationWindows(),
-      listStudentFeePayments(studentId),
-      listClassroomEnrollmentsForStudent(studentId),
-      listStudentAssignments(studentId)
-    ]);
-    const upcomingExams = exams
-      .filter((exam) => new Date(exam.examDate).getTime() >= Date.now())
-      .sort((a, b) => new Date(a.examDate).getTime() - new Date(b.examDate).getTime());
+    // Filter assignments by current semester
+    let allAssignments: StudentAssignment[] = [];
+    let filteredAssignments: StudentAssignment[] = [];
+    try {
+      allAssignments = await listStudentAssignments(studentId);
+      filteredAssignments = await filterAssignmentsBySemester(allAssignments, currentSemester, pool);
+    } catch (error) {
+      console.error('[StudentService] Error fetching/filtering assignments:', error);
+      // Continue with empty assignments array
+      filteredAssignments = [];
+    }
+
+    let grades: any[] = [];
+    let exams: any[] = [];
+    let gpaBySemester: any[] = [];
+    let registrationWindows: any[] = [];
+    let fees: any[] = [];
+    let classroomEnrollments: ClassroomEnrollment[] = [];
+    
+    try {
+      [grades, exams, gpaBySemester, registrationWindows, fees, classroomEnrollments] = await Promise.all([
+        listStudentGrades(studentId),
+        listExamAnnouncements(),
+        listStudentSemesterGpa(studentId),
+        listRegistrationWindows(),
+        listStudentFeePayments(studentId),
+        listClassroomEnrollmentsForStudent(studentId)
+      ]);
+    } catch (error) {
+      console.error('[StudentService] Error fetching dashboard data:', error);
+      // Set defaults to ensure dashboard still returns
+      grades = [];
+      exams = [];
+      gpaBySemester = [];
+      registrationWindows = [];
+      fees = [];
+      classroomEnrollments = [];
+    }
+    
+    const upcomingExams = (exams || []).filter((exam: any) => new Date(exam.examDate).getTime() >= Date.now())
+      .sort((a: any, b: any) => new Date(a.examDate).getTime() - new Date(b.examDate).getTime());
 
     // Ensure tuition fee exists based on class registrations
     // Calculate total credits from class registrations, grouped by semester
@@ -763,7 +1011,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
 
     // Filter registration windows courses by student's major
     const studentMajor = student.primaryInterest;
-    let filteredRegistrationWindows = registrationWindows;
+    let filteredRegistrationWindows: any[] = registrationWindows || [];
 
     if (studentMajor && pool) {
       try {
@@ -782,8 +1030,8 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
         }
 
         // Filter courses in registration windows
-        filteredRegistrationWindows = registrationWindows.map((window) => {
-          const filteredCourses = window.courses.filter((course) => {
+        filteredRegistrationWindows = registrationWindows.map((window: any) => {
+          const filteredCourses = (window.courses || []).filter((course: any) => {
             const courseKey = `${course.courseCode}|${course.courseTitle}`;
             const courseMajor = courseToMajorMap.get(courseKey);
             
@@ -812,21 +1060,72 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       }
     }
 
+    // Filter classroom enrollments by current semester
+    let filteredClassroomEnrollments: ClassroomEnrollment[] = [];
+    try {
+      filteredClassroomEnrollments = await filterClassroomEnrollmentsBySemester(
+        classroomEnrollments,
+        currentSemester,
+        pool
+      );
+    } catch (error) {
+      console.error('[StudentService] Error filtering classroom enrollments:', error);
+      // Use unfiltered enrollments if filtering fails
+      filteredClassroomEnrollments = classroomEnrollments || [];
+    }
+
+    console.log(`[StudentService] Returning dashboard for student ${studentId} with ${registrationsResult.rows.length} registrations, ${filteredAssignments.length} assignments`);
+
     return {
       student,
-      timetable: timetableResult.rows,
-      schedule: scheduleResult.rows,
-      registrations: registrationsResult.rows,
-      classroomEnrollments,
-      grades,
+      currentSemester,
+      timetable: timetableResult.rows || [],
+      schedule: scheduleResult.rows || [],
+      registrations: registrationsResult.rows || [],
+      classroomEnrollments: filteredClassroomEnrollments,
+      grades: grades || [],
       upcomingExams,
-      gpaBySemester,
-      registrationWindows: filteredRegistrationWindows,
-      fees: updatedFees,
-      assignments
+      gpaBySemester: gpaBySemester || [],
+      registrationWindows: filteredRegistrationWindows || [],
+      fees: updatedFees || fees || [],
+      assignments: filteredAssignments
     };
   } catch (error) {
-    console.error('Failed to fetch student dashboard', error);
+    console.error(`[StudentService] Failed to fetch student dashboard for student ${studentId}:`, error);
+    console.error('Error details:', error instanceof Error ? error.stack : error);
+    
+    // Try to at least return a minimal dashboard with just the student info
+    // This prevents the "dashboard not found" error if the student exists
+    try {
+      const student = await fetchStudentById(studentId);
+      if (student) {
+        console.log(`[StudentService] Returning minimal dashboard for student ${studentId} due to error`);
+        // Get current semester for fallback dashboard
+        let fallbackSemester = '1/2026';
+        try {
+          fallbackSemester = await getCurrentSemester();
+        } catch (e) {
+          // Use default
+        }
+        return {
+          student,
+          currentSemester: fallbackSemester,
+          timetable: [],
+          schedule: [],
+          registrations: [],
+          classroomEnrollments: [],
+          grades: [],
+          upcomingExams: [],
+          gpaBySemester: [],
+          registrationWindows: [],
+          fees: [],
+          assignments: []
+        };
+      }
+    } catch (fallbackError) {
+      console.error(`[StudentService] Failed to fetch student for fallback dashboard:`, fallbackError);
+    }
+    
     return null;
   }
 }
@@ -846,6 +1145,13 @@ export async function registerStudentForSemesterCourse(
     throw new Error('Course is not available for the requested semester.');
   }
 
+  // Check if registration period is still open (checks both status and closes_at date)
+  const registrationStatus = await getRegistrationStatus(semester);
+  
+  if (!registrationStatus.open) {
+    throw new Error(registrationStatus.message || 'Registration is not available at this time.');
+  }
+  
   if (offering.window.status !== 'open') {
     throw new Error('Registration for this semester is not open.');
   }

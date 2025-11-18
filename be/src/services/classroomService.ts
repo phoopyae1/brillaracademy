@@ -2,6 +2,7 @@ import { getPool } from '../db/pool.js';
 import { fallbackClassrooms, fallbackClassroomEnrollments } from './fallbackData.js';
 import type { Classroom, ClassroomAvailability, ClassroomEnrollment } from './types.js';
 import { recordAtenxionTransaction } from './atenxionService.js';
+import { getCurrentSemester, isRegistrationPeriodOpen } from './systemService.js';
 
 let inMemoryClassrooms = [...fallbackClassrooms];
 // Start next ID after the highest ID in fallback data (should be 217 after latest seed)
@@ -414,6 +415,17 @@ async function getStudentAssignedCourses(studentId: number): Promise<Array<{ tea
 
 export async function listClassroomsWithAvailability(studentId?: number): Promise<ClassroomAvailability[]> {
   const pool = getPool();
+  
+  // Get current semester to filter courses
+  let currentSemester = '1/2026';
+  try {
+    const { getCurrentSemester } = await import('./systemService.js');
+    currentSemester = await getCurrentSemester();
+    console.log(`[ClassroomService] Filtering available classrooms by current semester: ${currentSemester}`);
+  } catch (error) {
+    console.error('[ClassroomService] Failed to get current semester, using default:', error);
+  }
+  
   const [classrooms, counts] = await Promise.all([listClassrooms(), getClassroomEnrollmentCounts()]);
 
   // Calculate seat counts per course (courseCode + weekday + startTime) from timetables
@@ -430,8 +442,10 @@ export async function listClassroomsWithAvailability(studentId?: number): Promis
            AND to_char(t.start_time, 'HH24:MI') = to_char(ta.start_time, 'HH24:MI')
            AND to_char(t.end_time, 'HH24:MI') = to_char(ta.end_time, 'HH24:MI')
            AND t.location::TEXT = ta.classroom_id::TEXT
+         WHERE ta.semester = $1
          GROUP BY ta.course_code, ta.weekday, ta.start_time
-         ORDER BY ta.course_code, ta.weekday, ta.start_time`
+         ORDER BY ta.course_code, ta.weekday, ta.start_time`,
+        [currentSemester]
       );
       
       console.log(`[ClassroomService] Per-course enrollment counts from timetables:`);
@@ -460,7 +474,9 @@ export async function listClassroomsWithAvailability(studentId?: number): Promis
                 sa.display_name AS teacher_name
          FROM teaching_assignments ta
          LEFT JOIN staff_accounts sa ON ta.teacher_id = sa.id
-         ORDER BY ta.classroom_id, ta.course_code, ta.weekday, ta.start_time, ta.teacher_id, ta.id ASC`
+         WHERE ta.semester = $1
+         ORDER BY ta.classroom_id, ta.course_code, ta.weekday, ta.start_time, ta.teacher_id, ta.id ASC`,
+        [currentSemester]
       );
 
       console.log(`[ClassroomService] Found ${rows.length} teaching assignments for classrooms`);
@@ -516,7 +532,11 @@ export async function listClassroomsWithAvailability(studentId?: number): Promis
     try {
       const { listTeachingAssignments } = await import('./teachingService.js');
       const { findStaffById } = await import('./staffService.js');
-      const assignments = await listTeachingAssignments();
+      const allAssignments = await listTeachingAssignments();
+      
+      // Filter assignments by current semester
+      const assignments = allAssignments.filter(assignment => assignment.semester === currentSemester);
+      console.log(`[ClassroomService] Filtered ${assignments.length} assignments for semester ${currentSemester} (from ${allAssignments.length} total)`);
       
       for (const assignment of assignments) {
         const classroomId = assignment.classroomId;
@@ -841,6 +861,15 @@ export async function registerStudentForClassroom(
 
   if (!classroom) {
     throw new Error('Classroom not found.');
+  }
+
+  // Check if registration period is still open
+  const currentSemester = await getCurrentSemester();
+  const { getRegistrationStatus } = await import('./systemService.js');
+  const registrationStatus = await getRegistrationStatus(currentSemester);
+  
+  if (!registrationStatus.open) {
+    throw new Error(registrationStatus.message || 'Registration is not available at this time.');
   }
 
   // If registering for a specific course, check if student is already registered for that course
@@ -1984,8 +2013,33 @@ export async function registerStudentForClassroom(
         }
       }
 
+      // Verify that we actually created data before committing
+      if (coursesProcessed === 0) {
+        await client.query('ROLLBACK');
+        throw new Error('No courses were processed. Registration failed.');
+      }
+
       await client.query('COMMIT');
-      console.log(`[ClassroomService] Registered student ${studentId} for classroom ${classroomId}, created ${assignmentsResult.rows.length} timetable entries, class registrations, and fee payment`);
+      console.log(`[ClassroomService] ✓ Transaction COMMITTED: Registered student ${studentId} for classroom ${classroomId}, processed ${coursesProcessed} course(s), created timetable entries, class registrations, and fee payment`);
+      
+      // Release client before verification (since transaction is committed)
+      client.release();
+      
+      // Verify the data was actually saved (using a new connection since transaction is committed)
+      try {
+        const verifyRegistration = await pool.query(
+          `SELECT COUNT(*) as count FROM class_registrations WHERE student_id = $1 AND registered_at > NOW() - INTERVAL '1 minute'`,
+          [studentId]
+        );
+        const recentRegistrations = Number(verifyRegistration.rows[0]?.count || 0);
+        if (recentRegistrations === 0) {
+          console.error(`[ClassroomService] ⚠️ WARNING: Transaction committed but no recent registrations found for student ${studentId}`);
+        } else {
+          console.log(`[ClassroomService] ✓ Verified: ${recentRegistrations} recent registration(s) found in database`);
+        }
+      } catch (verifyError) {
+        console.warn(`[ClassroomService] Could not verify registration (non-critical):`, verifyError);
+      }
 
       // Record Atenxion transaction (non-blocking, fire-and-forget)
       recordAtenxionTransaction(String(studentId)).catch((error) => {
@@ -1996,9 +2050,8 @@ export async function registerStudentForClassroom(
     } catch (error: any) {
       await client.query('ROLLBACK').catch(() => {}); // Ignore rollback errors
       console.error(`[ClassroomService] Transaction error for student ${studentId} -> classroom ${classroomId}:`, error);
-      throw error;
-    } finally {
       client.release();
+      throw error;
     }
   } catch (error: any) {
     const duplicate = error?.code === '23505';

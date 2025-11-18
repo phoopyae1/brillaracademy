@@ -36,6 +36,7 @@ type StudentAssignment = {
 };
 
 type AssignmentsTabProps = {
+  currentSemester?: string;
   assignments: StudentAssignment[];
 };
 

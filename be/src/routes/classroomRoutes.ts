@@ -82,6 +82,7 @@ router.post('/:id/self-registrations', async (req, res) => {
   });
 
   try {
+    console.log(`[ClassroomRoutes] Attempting to register student ${parseResult.data.studentId} for classroom ${classroomId}${parseResult.data.courseCode ? ` (course: ${parseResult.data.courseCode})` : ''}`);
     const enrollment = await registerStudentForClassroom(
       parseResult.data.studentId, 
       classroomId,
@@ -89,9 +90,15 @@ router.post('/:id/self-registrations', async (req, res) => {
       parseResult.data.weekday, // Pass specific weekday if provided (for conflict checking)
       parseResult.data.startTime // Pass specific start time if provided (for conflict checking)
     );
+    console.log(`[ClassroomRoutes] ✓ Registration successful for student ${parseResult.data.studentId}, enrollment ID: ${enrollment.id}`);
     res.status(201).json({ enrollment });
   } catch (error: any) {
     const message = typeof error?.message === 'string' ? error.message : 'Unable to register for this course right now.';
+    console.error(`[ClassroomRoutes] ✗ Registration failed for student ${parseResult.data.studentId}:`, {
+      error: message,
+      stack: error?.stack,
+      code: error?.code
+    });
     res.status(400).json({ error: message });
   }
 });

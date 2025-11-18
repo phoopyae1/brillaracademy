@@ -31,6 +31,7 @@ function formatDateTime(value: string) {
 }
 
 interface CoursesTabProps {
+  currentSemester?: string;
   registrations: ClassRegistration[];
   timetable: TimetableEntry[];
   fees: FeePayment[];

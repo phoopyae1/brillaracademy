@@ -283,6 +283,18 @@ export async function assignTeacherToClassroom(
 ): Promise<TeachingAssignment> {
   const pool = getPool();
 
+  // Get current semester as default if not provided
+  let defaultSemester = '1/2026';
+  if (!input.semester) {
+    try {
+      const { getCurrentSemester } = await import('./systemService.js');
+      defaultSemester = await getCurrentSemester();
+      console.log(`[TeachingService] Using current semester as default: ${defaultSemester}`);
+    } catch (error) {
+      console.error('[TeachingService] Failed to get current semester, using default:', error);
+    }
+  }
+
   // Validate that classroom matches the major focus
   if (input.majorFocus && input.classroomId) {
     const isValid = await validateClassroomMajorMatch(input.classroomId, input.majorFocus, pool);
@@ -310,7 +322,7 @@ export async function assignTeacherToClassroom(
       endTime: input.endTime,
       studentGroup,
       majorFocus: input.majorFocus,
-      semester: input.semester ?? '1/2026',
+      semester: input.semester ?? defaultSemester,
       assignedBy: assignedBy ?? null,
       assignedAt
     };
@@ -400,7 +412,7 @@ export async function assignTeacherToClassroom(
       endTime: input.endTime,
       studentGroup,
       majorFocus: input.majorFocus,
-      semester: input.semester ?? '1/2026',
+      semester: input.semester ?? defaultSemester,
       assignedBy: assignedBy ?? null,
       assignedAt
     };

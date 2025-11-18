@@ -79,6 +79,7 @@ export default function StudentDashboard({
 
   const {
     student,
+    currentSemester,
     timetable,
     schedule,
     registrations,
@@ -180,6 +181,7 @@ export default function StudentDashboard({
         return (
           <OverviewTab
             student={student}
+            currentSemester={currentSemester}
             timetable={timetable}
             schedule={schedule}
             registrations={registrations}
@@ -193,15 +195,15 @@ export default function StudentDashboard({
           />
         );
       case 'courses':
-        return <CoursesTab registrations={registrations} timetable={timetable} fees={fees} />;
+        return <CoursesTab currentSemester={currentSemester} registrations={registrations} timetable={timetable} fees={fees} />;
       case 'planning':
-        return <PlanningTab schedule={schedule} registrationWindows={registrationWindows} timetable={timetable} />;
+        return <PlanningTab currentSemester={currentSemester} schedule={schedule} registrationWindows={registrationWindows} timetable={timetable} />;
       case 'gpa':
-        return <StatisticsTab grades={grades} gpaBySemester={gpaBySemester} registrations={registrations} />;
+        return <StatisticsTab currentSemester={currentSemester} grades={grades} gpaBySemester={gpaBySemester} registrations={registrations} />;
       // case 'gpa':
       //   return <GPATab gpaBySemester={gpaBySemester} grades={grades} />;
       case 'assignments':
-        return <AssignmentsTab assignments={assignments} />;
+        return <AssignmentsTab currentSemester={currentSemester} assignments={assignments} />;
       case 'messages':
         return <MessagesTab studentId={student.id} />;
       default:
@@ -251,6 +253,19 @@ export default function StudentDashboard({
                   <Typography variant="h6" fontWeight={700}>
                     Student Portal
                   </Typography>
+                  {currentSemester && (
+                    <Chip
+                      label={`Semester: ${currentSemester}`}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                      sx={{
+                        width: 'fit-content',
+                        fontWeight: 600,
+                        fontSize: '0.75rem'
+                      }}
+                    />
+                  )}
                 </Stack>
 
                 <Divider />
@@ -321,9 +336,22 @@ export default function StudentDashboard({
                   justifyContent="space-between"
                 >
                   <Stack spacing={1}>
-                    <Typography variant="h5" fontWeight={700}>
-                      Hello, {student.firstName} 👋
-                    </Typography>
+                    <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+                      <Typography variant="h5" fontWeight={700}>
+                        Hello, {student.firstName} 👋
+                      </Typography>
+                      {currentSemester && (
+                        <Chip
+                          label={`Current Semester: ${currentSemester}`}
+                          size="small"
+                          color="primary"
+                          sx={{
+                            fontWeight: 600,
+                            fontSize: '0.75rem'
+                          }}
+                        />
+                      )}
+                    </Stack>
                     <Typography variant="body2" color="text.secondary">
                       Here&apos;s a snapshot of your learning journey. Track schedules, assessments, and outstanding actions.
                     </Typography>

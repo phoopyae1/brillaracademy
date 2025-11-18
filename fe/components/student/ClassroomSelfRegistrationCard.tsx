@@ -134,10 +134,11 @@ export default function ClassroomSelfRegistrationCard({
       triggerAtenxionTransaction();
 
       // Refresh the page to show the new class registration in the dashboard
-      // Wait a bit to ensure the database transaction is committed
+      // Wait a bit longer to ensure the database transaction is fully committed and visible
       setTimeout(() => {
+        console.log('[Frontend] Refreshing page to show new registration...');
         router.refresh();
-      }, 500);
+      }, 1000);
     } catch (error: any) {
       const message =
         typeof error?.message === 'string' ? error.message : 'Unable to register for this classroom.';

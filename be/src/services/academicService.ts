@@ -224,10 +224,37 @@ export async function listRegistrationWindows(): Promise<SemesterRegistration[]>
   }
 
   try {
+    // Use FULL OUTER JOIN to show registration windows from both tables
+    // Priority: semester_dates dates > registration_windows dates
+    // If semester_dates exists but no registration_windows, create a default window
     const { rows } = await pool.query(
-      `SELECT id, semester, status, opens_at, closes_at, courses
-       FROM registration_windows
-       ORDER BY opens_at ASC`
+      `SELECT 
+        COALESCE(rw.id, sd.id) AS id,
+        COALESCE(rw.semester, sd.semester) AS semester,
+        COALESCE(rw.status, 'upcoming') AS status,
+        COALESCE(rw.courses, '[]'::jsonb) AS courses,
+        -- Always use semester_dates if available, otherwise use registration_windows dates
+        -- Convert dates to timestamps in Singapore timezone first, then to UTC for API
+        CASE 
+          WHEN sd.start_date IS NOT NULL THEN 
+            to_char((sd.start_date::date::timestamp AT TIME ZONE 'Asia/Singapore' AT TIME ZONE 'UTC'), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+          WHEN rw.opens_at IS NOT NULL THEN
+            to_char(rw.opens_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+          ELSE 
+            NULL
+        END AS opens_at,
+        CASE 
+          WHEN sd.end_date IS NOT NULL THEN 
+            to_char(((sd.end_date::date + INTERVAL '1 day' - INTERVAL '1 second')::timestamp AT TIME ZONE 'Asia/Singapore' AT TIME ZONE 'UTC'), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+          WHEN rw.closes_at IS NOT NULL THEN
+            to_char(rw.closes_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+          ELSE 
+            NULL
+        END AS closes_at
+       FROM semester_dates sd
+       FULL OUTER JOIN registration_windows rw ON sd.semester = rw.semester
+       WHERE sd.semester IS NOT NULL OR rw.semester IS NOT NULL
+       ORDER BY COALESCE(sd.start_date, rw.opens_at) ASC`
     );
 
     return rows.map(normalizeRegistrationWindow);

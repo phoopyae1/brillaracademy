@@ -51,6 +51,7 @@ export type ClassRegistration = {
 
 export type StudentDashboardData = {
   student: Student;
+  currentSemester: string;
   timetable: TimetableEntry[];
   schedule: ScheduleItem[];
   registrations: ClassRegistration[];

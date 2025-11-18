@@ -26,6 +26,7 @@ const GPA_THRESHOLD_GOOD = Math.round(3.0 * (GPA_MAX / 4) * 100) / 100;
 const GPA_THRESHOLD_FAIR = Math.round(2.5 * (GPA_MAX / 4) * 100) / 100;
 
 interface StatisticsTabProps {
+  currentSemester?: string;
   grades: Grade[];
   gpaBySemester: GPABySemester[];
   registrations: ClassRegistration[];

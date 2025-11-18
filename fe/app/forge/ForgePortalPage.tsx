@@ -38,6 +38,10 @@ import {
   fetchMajorSubjectCatalog,
   getCurrentSemester,
   updateCurrentSemester,
+  getSemesterDate,
+  setSemesterDate,
+  listSemesterDates,
+  type SemesterDate,
   listAnnouncements,
   createAnnouncement,
   deleteAnnouncement,
@@ -1065,6 +1069,14 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
   const [semesterLoading, setSemesterLoading] = useState(false);
   const [semesterError, setSemesterError] = useState('');
   const [semesterUpdateStatus, setSemesterUpdateStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+  
+  // Semester dates state
+  const [semesterDates, setSemesterDates] = useState<SemesterDate[]>([]);
+  const [selectedSemesterForDates, setSelectedSemesterForDates] = useState<string>('1/2026');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [semesterDateStatus, setSemesterDateStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+  const [semesterDateError, setSemesterDateError] = useState<string>('');
 
   // Load current semester on mount
   useEffect(() => {
@@ -1072,6 +1084,7 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
       try {
         const semester = await getCurrentSemester(session.token);
         setCurrentSemester(semester);
+        setSelectedSemesterForDates(semester);
       } catch (error) {
         console.error('Failed to load current semester', error);
         setSemesterError('Failed to load current semester');
@@ -1080,17 +1093,94 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
     void loadCurrentSemester();
   }, [session.token]);
 
+  // Load semester dates on mount and when current semester changes
+  useEffect(() => {
+    const loadSemesterDates = async () => {
+      try {
+        const dates = await listSemesterDates(session.token);
+        setSemesterDates(dates);
+        
+        // Load dates for current semester if available
+        const currentSemesterDate = dates.find(d => d.semester === currentSemester);
+        if (currentSemesterDate) {
+          setStartDate(currentSemesterDate.startDate);
+          setEndDate(currentSemesterDate.endDate);
+        } else {
+          setStartDate('');
+          setEndDate('');
+        }
+      } catch (error) {
+        console.error('Failed to load semester dates', error);
+      }
+    };
+    void loadSemesterDates();
+  }, [session.token, currentSemester]);
+
+  // Load dates when selected semester changes
+  useEffect(() => {
+    const loadSelectedSemesterDate = async () => {
+      try {
+        const semesterDate = await getSemesterDate(session.token, selectedSemesterForDates);
+        if (semesterDate) {
+          setStartDate(semesterDate.startDate);
+          setEndDate(semesterDate.endDate);
+        } else {
+          setStartDate('');
+          setEndDate('');
+        }
+      } catch (error) {
+        console.error('Failed to load semester date', error);
+        setStartDate('');
+        setEndDate('');
+      }
+    };
+    void loadSelectedSemesterDate();
+  }, [session.token, selectedSemesterForDates]);
+
   const handleUpdateSemester = async (newSemester: string) => {
     setSemesterUpdateStatus('submitting');
     setSemesterError('');
     try {
       const updated = await updateCurrentSemester(session.token, newSemester);
       setCurrentSemester(updated);
+      setSelectedSemesterForDates(updated);
       setSemesterUpdateStatus('success');
       setTimeout(() => setSemesterUpdateStatus('idle'), 3000);
     } catch (error) {
       setSemesterError(error instanceof Error ? error.message : 'Failed to update semester');
       setSemesterUpdateStatus('error');
+    }
+  };
+
+  const handleSaveSemesterDates = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    
+    if (!startDate || !endDate) {
+      setSemesterDateError('Please provide both start and end dates');
+      setSemesterDateStatus('error');
+      return;
+    }
+
+    if (new Date(endDate) < new Date(startDate)) {
+      setSemesterDateError('End date must be after start date');
+      setSemesterDateStatus('error');
+      return;
+    }
+
+    setSemesterDateStatus('submitting');
+    setSemesterDateError('');
+    
+    try {
+      const saved = await setSemesterDate(session.token, selectedSemesterForDates, startDate, endDate);
+      setSemesterDates(prev => {
+        const filtered = prev.filter(d => d.semester !== saved.semester);
+        return [...filtered, saved];
+      });
+      setSemesterDateStatus('success');
+      setTimeout(() => setSemesterDateStatus('idle'), 3000);
+    } catch (error) {
+      setSemesterDateError(error instanceof Error ? error.message : 'Failed to save semester dates');
+      setSemesterDateStatus('error');
     }
   };
 
@@ -1325,6 +1415,93 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
               <Alert severity="success" sx={{ py: 0.5, px: 1.5 }}>Semester updated successfully</Alert>
             )}
             {semesterError && <Alert severity="error" sx={{ py: 0.5, px: 1.5 }}>{semesterError}</Alert>}
+          </Stack>
+        </Stack>
+      </Paper>
+
+      {/* Semester Start/End Dates */}
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+        <Stack spacing={2.5} component="form" onSubmit={handleSaveSemesterDates} noValidate>
+          <Box>
+            <Typography variant="h6" fontWeight={600} gutterBottom>
+              Semester Start & End Dates
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Define the start and end dates for each semester. Students cannot register after the semester end date has passed.
+            </Typography>
+          </Box>
+          <Divider />
+          
+          {semesterDateStatus === 'error' && semesterDateError && (
+            <Alert severity="error">{semesterDateError}</Alert>
+          )}
+          {semesterDateStatus === 'success' && (
+            <Alert severity="success">Semester dates saved successfully</Alert>
+          )}
+
+          <Grid container spacing={2.5}>
+            <Grid item xs={12} md={4}>
+              <FormControl fullWidth required>
+                <InputLabel id="semester-dates-select">Semester</InputLabel>
+                <Select
+                  labelId="semester-dates-select"
+                  label="Semester"
+                  value={selectedSemesterForDates}
+                  onChange={(event) => setSelectedSemesterForDates(event.target.value)}
+                  disabled={semesterDateStatus === 'submitting'}
+                >
+                  <MenuItem value="1/2026">1/2026</MenuItem>
+                  <MenuItem value="2/2026">2/2026</MenuItem>
+                  <MenuItem value="1/2027">1/2027</MenuItem>
+                  <MenuItem value="2/2027">2/2027</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <TextField
+                fullWidth
+                required
+                type="date"
+                label="Start Date"
+                value={startDate}
+                onChange={(event) => setStartDate(event.target.value)}
+                disabled={semesterDateStatus === 'submitting'}
+                InputLabelProps={{
+                  shrink: true,
+                }}
+              />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <TextField
+                fullWidth
+                required
+                type="date"
+                label="End Date"
+                value={endDate}
+                onChange={(event) => setEndDate(event.target.value)}
+                disabled={semesterDateStatus === 'submitting'}
+                InputLabelProps={{
+                  shrink: true,
+                }}
+                error={!!(endDate && startDate && new Date(endDate) < new Date(startDate))}
+                helperText={
+                  endDate && startDate && new Date(endDate) < new Date(startDate)
+                    ? 'End date must be after start date'
+                    : ''
+                }
+              />
+            </Grid>
+          </Grid>
+
+          <Stack direction="row" spacing={2} justifyContent="flex-end">
+            {semesterDateStatus === 'submitting' && <CircularProgress size={24} />}
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={semesterDateStatus === 'submitting' || !startDate || !endDate}
+            >
+              Save Dates
+            </Button>
           </Stack>
         </Stack>
       </Paper>

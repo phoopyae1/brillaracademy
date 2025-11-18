@@ -6,7 +6,7 @@ import { listStudentAssignments } from '../services/assignmentService.js';
 import { gradeToPoint } from '../services/academicService.js';
 import { requireStudent, type AuthenticatedStudentRequest } from '../middleware/requireStudent.js';
 import { registerStudentForClassroom } from '../services/classroomService.js';
-import { getCurrentSemester } from '../services/systemService.js';
+import { getCurrentSemester, isRegistrationPeriodOpen, getRegistrationStatus, getSemesterDate } from '../services/systemService.js';
 
 function formatTimeToSingapore(time: string | null | undefined): string | null {
   if (!time) {
@@ -200,10 +200,19 @@ router.post('/student-registrations', requireStudent(), async (req: Authenticate
 
     const generatedAt = formatDateTimeToSingapore(new Date().toISOString());
     const currentSemester = await getCurrentSemester();
+    const registrationStatus = currentSemester ? await getRegistrationStatus(currentSemester) : { open: false, reason: 'unknown', message: 'Current semester not set.' };
+    const semesterDate = currentSemester ? await getSemesterDate(currentSemester) : null;
 
     return res.json({
       generatedAtSingapore: generatedAt,
       currentSemester: currentSemester,
+      registrationStatus: {
+        open: registrationStatus.open,
+        reason: registrationStatus.reason || null,
+        message: registrationStatus.message || null,
+        startDate: semesterDate?.startDate || null,
+        endDate: semesterDate?.endDate || null
+      },
       registrations: detailedRegistrations
     });
   } catch (error) {
@@ -724,6 +733,17 @@ router.post('/register-course', requireStudent(), async (req: AuthenticatedStude
     }
 
     const course = rows[0];
+
+    // Check if registration period is still open
+    const currentSemester = await getCurrentSemester();
+    const { getRegistrationStatus } = await import('../services/systemService.js');
+    const registrationStatus = await getRegistrationStatus(currentSemester);
+    
+    if (!registrationStatus.open) {
+      return res.status(403).json({ 
+        error: registrationStatus.message || 'Registration is not available at this time.' 
+      });
+    }
 
     // Hard stop: prevent agents from re-validating courses the student already confirmed
     const { rows: existingRoster } = await pool.query(

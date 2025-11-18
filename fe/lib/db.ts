@@ -83,6 +83,7 @@ export type StudentAssignment = {
 
 export type StudentDashboardData = {
   student: Student;
+  currentSemester: string;
   timetable: Array<{
     id: number;
     studentId: number;
@@ -252,6 +253,55 @@ export async function updateCurrentSemester(token: string, semester: string): Pr
     token
   });
   return data.currentSemester;
+}
+
+export type SemesterDate = {
+  id: number;
+  semester: string;
+  startDate: string;
+  endDate: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export async function getSemesterDate(token: string, semester: string): Promise<SemesterDate | null> {
+  try {
+    const data = await apiRequest<{ semesterDate: SemesterDate | null }>(`/system/settings/semester-dates/${semester}`, {
+      method: 'GET',
+      token
+    });
+    return data.semesterDate || null;
+  } catch (error) {
+    console.error('Failed to get semester date:', error);
+    return null;
+  }
+}
+
+export async function listSemesterDates(token: string): Promise<SemesterDate[]> {
+  try {
+    const data = await apiRequest<{ semesterDates: SemesterDate[] }>('/system/settings/semester-dates', {
+      method: 'GET',
+      token
+    });
+    return data.semesterDates || [];
+  } catch (error) {
+    console.error('Failed to list semester dates:', error);
+    return [];
+  }
+}
+
+export async function setSemesterDate(
+  token: string,
+  semester: string,
+  startDate: string,
+  endDate: string
+): Promise<SemesterDate> {
+  const data = await apiRequest<{ semesterDate: SemesterDate }>('/system/settings/semester-dates', {
+    method: 'PUT',
+    body: { semester, startDate, endDate },
+    token
+  });
+  return data.semesterDate;
 }
 
 function resolveApiBaseUrl() {

@@ -144,6 +144,18 @@ CREATE TABLE IF NOT EXISTS system_settings (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS semester_dates (
+    id SERIAL PRIMARY KEY,
+    semester TEXT NOT NULL UNIQUE,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    created_by INTEGER REFERENCES staff_accounts(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by INTEGER REFERENCES staff_accounts(id),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (end_date >= start_date)
+);
+
 CREATE TABLE IF NOT EXISTS teaching_assignments (
     id SERIAL PRIMARY KEY,
     teacher_id INTEGER NOT NULL REFERENCES staff_accounts(id) ON DELETE CASCADE,
