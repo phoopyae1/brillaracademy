@@ -224,6 +224,15 @@ export async function listRegistrationWindows(): Promise<SemesterRegistration[]>
   }
 
   try {
+    // Get current semester to automatically set status to 'open' for current semester
+    let currentSemester: string | null = null;
+    try {
+      const { getCurrentSemester } = await import('./systemService.js');
+      currentSemester = await getCurrentSemester();
+    } catch (error) {
+      console.warn('[AcademicService] Could not get current semester for registration windows:', error);
+    }
+
     // Use FULL OUTER JOIN to show registration windows from both tables
     // Priority: semester_dates dates > registration_windows dates
     // If semester_dates exists but no registration_windows, create a default window
@@ -257,7 +266,15 @@ export async function listRegistrationWindows(): Promise<SemesterRegistration[]>
        ORDER BY COALESCE(sd.start_date, rw.opens_at) ASC`
     );
 
-    return rows.map(normalizeRegistrationWindow);
+    // Normalize and override status for current semester
+    return rows.map((row) => {
+      const normalized = normalizeRegistrationWindow(row);
+      // Automatically set status to 'open' for current semester
+      if (currentSemester && normalized.semester === currentSemester) {
+        normalized.status = 'open';
+      }
+      return normalized;
+    });
   } catch (error) {
     console.error('Failed to fetch registration windows', error);
     return inMemoryRegistrationWindows;

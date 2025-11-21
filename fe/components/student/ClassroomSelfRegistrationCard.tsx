@@ -32,6 +32,7 @@ type ClassroomSelfRegistrationCardProps = {
   classrooms: ClassroomAvailability[];
   enrollments: ClassroomEnrollment[];
   studentMajor?: string | null;
+  currentSemester?: string;
 };
 
 function formatRegisteredAt(value: string) {
@@ -45,7 +46,8 @@ export default function ClassroomSelfRegistrationCard({
   studentId,
   classrooms,
   enrollments,
-  studentMajor
+  studentMajor,
+  currentSemester
 }: ClassroomSelfRegistrationCardProps) {
   const router = useRouter();
   const [classroomList, setClassroomList] = useState(classrooms);
@@ -303,9 +305,20 @@ export default function ClassroomSelfRegistrationCard({
             Self-service classroom selection
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            {studentMajor 
-              ? `No classrooms with ${studentMajor} courses are available yet. Administrators need to create teaching assignments for ${studentMajor} courses.`
-              : 'Administrators have not published any shared classrooms yet. Check back soon to claim a collaborative space.'}
+            {currentSemester ? (
+              <>
+                No classrooms are available for <strong>{currentSemester}</strong> yet.
+                {studentMajor ? (
+                  <> Administrators need to create teaching assignments for <strong>{studentMajor}</strong> courses with semester <strong>{currentSemester}</strong>.</>
+                ) : (
+                  <> Administrators need to create teaching assignments with semester <strong>{currentSemester}</strong>.</>
+                )}
+              </>
+            ) : studentMajor ? (
+              `No classrooms with ${studentMajor} courses are available yet. Administrators need to create teaching assignments for ${studentMajor} courses.`
+            ) : (
+              'Administrators have not published any shared classrooms yet. Check back soon to claim a collaborative space.'
+            )}
           </Typography>
         </Stack>
       </Paper>

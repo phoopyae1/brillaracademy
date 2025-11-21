@@ -69,6 +69,7 @@ interface OverviewTabProps {
 
 export default function OverviewTab({
   student,
+  currentSemester,
   timetable,
   schedule,
   registrations,
@@ -100,7 +101,11 @@ export default function OverviewTab({
   const scheduleHighlights = schedule.slice(0, 3);
   const gradeHighlights = grades.slice(0, 5);
   const gpaHighlights = gpaBySemester.slice(0, 3);
-  const nextRegistrationWindow = registrationWindows.find((window) => window.status === 'open') ?? registrationWindows[0];
+  // Prioritize current semester's registration window
+  const nextRegistrationWindow = 
+    registrationWindows.find((window) => currentSemester && window.semester === currentSemester) ??
+    registrationWindows.find((window) => window.status === 'open') ??
+    registrationWindows[0];
   const averageGpa = gpaBySemester.length
     ? gpaBySemester.reduce((sum, entry) => sum + entry.gpa, 0) / gpaBySemester.length
     : null;
@@ -607,6 +612,7 @@ export default function OverviewTab({
           classrooms={availableClassrooms}
           enrollments={classroomEnrollments}
           studentMajor={student.primaryInterest}
+          currentSemester={currentSemester}
         />
       </Paper>
     </Stack>

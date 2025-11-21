@@ -33,11 +33,12 @@ function formatDateTime(value: string) {
 interface CoursesTabProps {
   currentSemester?: string;
   registrations: ClassRegistration[];
+  historicalRegistrations?: ClassRegistration[];
   timetable: TimetableEntry[];
   fees: FeePayment[];
 }
 
-export default function CoursesTab({ registrations, timetable, fees }: CoursesTabProps) {
+export default function CoursesTab({ registrations, historicalRegistrations = [], timetable, fees, currentSemester }: CoursesTabProps) {
   const registeredCourses = registrations.filter((registration) => registration.status === 'registered');
   const totalCredits = registeredCourses.reduce((sum, reg) => sum + (reg.credits ?? 0), 0);
   const totalTuition = totalCredits * CREDIT_RATE;
@@ -246,6 +247,100 @@ export default function CoursesTab({ registrations, timetable, fees }: CoursesTa
           </TableContainer>
         </Stack>
       </Paper>
+
+      {/* Historical Course Registrations */}
+      {historicalRegistrations && historicalRegistrations.length > 0 && (
+        <Paper
+          elevation={0}
+          sx={{
+            p: 3,
+            backgroundColor: '#ffffff',
+            border: '1px solid',
+            borderColor: 'rgba(0, 0, 0, 0.08)'
+          }}
+        >
+          <Stack spacing={2}>
+            <Typography variant="h6" fontWeight={700}>
+              Course History
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Past semester course registrations and completed courses.
+            </Typography>
+            <Divider sx={{ borderStyle: 'dashed' }} />
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600 }}>Semester</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Course Name</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Instructor</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Credits</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Status</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Registered Date</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {historicalRegistrations
+                    .sort((a, b) => {
+                      // Sort by semester (newest first), then by registered date
+                      const semesterA = a.semester || '';
+                      const semesterB = b.semester || '';
+                      if (semesterA !== semesterB) {
+                        return semesterB.localeCompare(semesterA);
+                      }
+                      return new Date(b.registeredAt).getTime() - new Date(a.registeredAt).getTime();
+                    })
+                    .map((registration) => {
+                      const credits = registration.credits ?? 0;
+                      return (
+                        <TableRow key={registration.id} hover>
+                          <TableCell>
+                            <Chip
+                              label={registration.semester || 'N/A'}
+                              size="small"
+                              color="default"
+                              variant="outlined"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" fontWeight={500}>
+                              {registration.className}
+                            </Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">{registration.instructor ?? 'TBA'}</Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2">{credits || '—'}</Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={registration.status}
+                              color={
+                                registration.status === 'registered'
+                                  ? 'success'
+                                  : registration.status === 'waitlisted'
+                                    ? 'warning'
+                                    : 'default'
+                              }
+                              size="small"
+                              sx={{ textTransform: 'capitalize' }}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">
+                              {formatDateTime(registration.registeredAt)}
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Stack>
+        </Paper>
+      )}
 
       {/* Course Schedule */}
       <Paper

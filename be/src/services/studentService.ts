@@ -570,9 +570,15 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       }
     }
 
-    // Filter by current semester in in-memory mode - only show registrations for current semester
-    const filteredRegistrations = inMemoryRegistrations.filter(
-      (entry) => entry.studentId === studentId && entry.semester === currentSemester
+    // Filter by current semester in in-memory mode - separate current and historical
+    const allStudentRegistrations = inMemoryRegistrations.filter(
+      (entry) => entry.studentId === studentId
+    );
+    const filteredRegistrations = allStudentRegistrations.filter(
+      (entry) => entry.semester === currentSemester
+    );
+    const historicalRegistrations = allStudentRegistrations.filter(
+      (entry) => entry.semester && entry.semester !== currentSemester
     );
     const filteredAssignments = assignments.filter((assignment) => {
       // In in-memory mode, we can't easily check semester from assignments
@@ -589,6 +595,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       timetable: inMemoryTimetables.filter((entry) => entry.studentId === studentId),
       schedule: inMemorySchedules.filter((entry) => entry.studentId === studentId),
       registrations: filteredRegistrations,
+      historicalRegistrations: historicalRegistrations,
       classroomEnrollments,
       grades,
       upcomingExams,
@@ -708,6 +715,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
            ORDER BY start_time ASC`,
           [studentId]
         ),
+        // Fetch ALL registrations (current and historical)
         pool.query<ClassRegistration & { courseCode?: string }>(
           `SELECT * FROM (
              SELECT DISTINCT ON (cr.id)
@@ -719,9 +727,8 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
              LEFT JOIN teacher_rosters tr ON tr.student_id = cr.student_id 
                AND LOWER(TRIM(tr.course_title)) = LOWER(TRIM(cr.class_name))
              LEFT JOIN teaching_assignments ta ON LOWER(TRIM(ta.course_title)) = LOWER(TRIM(cr.class_name))
-               AND ta.semester = $2
+               AND (ta.semester = cr.semester OR (cr.semester IS NULL AND ta.semester = $2))
              WHERE cr.student_id = $1
-               AND (cr.semester = $2 OR (cr.semester IS NULL AND ta.semester = $2))
              ORDER BY cr.id, COALESCE(tr.course_code, ta.course_code) NULLS LAST, cr.registered_at DESC
            ) AS registrations
            ORDER BY "registeredAt" DESC`,
@@ -1074,14 +1081,26 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       filteredClassroomEnrollments = classroomEnrollments || [];
     }
 
-    console.log(`[StudentService] Returning dashboard for student ${studentId} with ${registrationsResult.rows.length} registrations, ${filteredAssignments.length} assignments`);
+    // Separate registrations into current and historical
+    const allRegistrations = registrationsResult.rows || [];
+    const currentRegistrations = allRegistrations.filter(reg => {
+      const regSemester = reg.semester || currentSemester;
+      return regSemester === currentSemester;
+    });
+    const historicalRegistrations = allRegistrations.filter(reg => {
+      const regSemester = reg.semester || currentSemester;
+      return regSemester !== currentSemester;
+    });
+
+    console.log(`[StudentService] Returning dashboard for student ${studentId} with ${currentRegistrations.length} current registrations, ${historicalRegistrations.length} historical registrations, ${filteredAssignments.length} assignments`);
 
     return {
       student,
       currentSemester,
       timetable: timetableResult.rows || [],
       schedule: scheduleResult.rows || [],
-      registrations: registrationsResult.rows || [],
+      registrations: currentRegistrations, // Current semester only for backward compatibility
+      historicalRegistrations: historicalRegistrations, // Historical registrations from past semesters
       classroomEnrollments: filteredClassroomEnrollments,
       grades: grades || [],
       upcomingExams,
@@ -1113,6 +1132,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
           timetable: [],
           schedule: [],
           registrations: [],
+          historicalRegistrations: [],
           classroomEnrollments: [],
           grades: [],
           upcomingExams: [],

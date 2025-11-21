@@ -306,7 +306,8 @@ export default function ForgePortalPage({ staffId }: ForgePortalPageProps = {}) 
       startTime: input.startTime,
       endTime: input.endTime,
       studentGroup: input.studentGroup || undefined,
-      majorFocus: input.majorFocus
+      majorFocus: input.majorFocus,
+      semester: input.semester
     };
 
     const assignment = await createTeachingAssignment(session.token, payload);
@@ -467,6 +468,7 @@ export default function ForgePortalPage({ staffId }: ForgePortalPageProps = {}) 
                 setAnnouncements((prev) => prev.filter((a) => a.id !== id));
               }}
               onStudentsChange={refreshStudents}
+              onAssignmentsChange={loadData}
             />
           )}
 
@@ -1048,9 +1050,10 @@ type ItAdminWorkspaceProps = {
   }) => Promise<Announcement>;
   onDeleteAnnouncement: (id: number) => Promise<void>;
   onStudentsChange?: () => void;
+  onAssignmentsChange?: () => void;
 };
 
-function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, students, onCreateAssignment, session, announcements, onCreateAnnouncement, onDeleteAnnouncement, onStudentsChange }: ItAdminWorkspaceProps) {
+function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, students, onCreateAssignment, session, announcements, onCreateAnnouncement, onDeleteAnnouncement, onStudentsChange, onAssignmentsChange }: ItAdminWorkspaceProps) {
   const [formState, setFormState] = useState<AssignmentFormState>({
     teacherId: '',
     classroomId: '',
@@ -1085,6 +1088,8 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
         const semester = await getCurrentSemester(session.token);
         setCurrentSemester(semester);
         setSelectedSemesterForDates(semester);
+        // Update form state to use current semester as default
+        setFormState(prev => ({ ...prev, semester }));
       } catch (error) {
         console.error('Failed to load current semester', error);
         setSemesterError('Failed to load current semester');

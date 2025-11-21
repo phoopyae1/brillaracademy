@@ -83,6 +83,7 @@ export default function StudentDashboard({
     timetable,
     schedule,
     registrations,
+    historicalRegistrations,
     grades,
     upcomingExams,
     gpaBySemester,
@@ -195,7 +196,7 @@ export default function StudentDashboard({
           />
         );
       case 'courses':
-        return <CoursesTab currentSemester={currentSemester} registrations={registrations} timetable={timetable} fees={fees} />;
+        return <CoursesTab currentSemester={currentSemester} registrations={registrations} historicalRegistrations={historicalRegistrations || []} timetable={timetable} fees={fees} />;
       case 'planning':
         return <PlanningTab currentSemester={currentSemester} schedule={schedule} registrationWindows={registrationWindows} timetable={timetable} />;
       case 'gpa':

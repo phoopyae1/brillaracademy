@@ -203,6 +203,17 @@ router.post('/student-registrations', requireStudent(), async (req: Authenticate
     const registrationStatus = currentSemester ? await getRegistrationStatus(currentSemester) : { open: false, reason: 'unknown', message: 'Current semester not set.' };
     const semesterDate = currentSemester ? await getSemesterDate(currentSemester) : null;
 
+    // Separate registrations into current semester and historical (past semesters)
+    const currentRegistrations = detailedRegistrations.filter(reg => {
+      const regSemester = reg.semester || currentSemester;
+      return regSemester === currentSemester;
+    });
+    
+    const historicalRegistrations = detailedRegistrations.filter(reg => {
+      const regSemester = reg.semester || currentSemester;
+      return regSemester !== currentSemester;
+    });
+
     return res.json({
       generatedAtSingapore: generatedAt,
       currentSemester: currentSemester,
@@ -213,7 +224,9 @@ router.post('/student-registrations', requireStudent(), async (req: Authenticate
         startDate: semesterDate?.startDate || null,
         endDate: semesterDate?.endDate || null
       },
-      registrations: detailedRegistrations
+      registrations: detailedRegistrations, // All registrations (for backward compatibility)
+      currentRegistrations: currentRegistrations, // Current semester registrations
+      historicalRegistrations: historicalRegistrations // Past semester registrations
     });
   } catch (error) {
     console.error('[Agent] Error fetching student registrations:', error);
@@ -649,17 +662,18 @@ router.post('/grades', requireStudent(), async (req: AuthenticatedStudentRequest
  */
 router.post('/register-course', requireStudent(), async (req: AuthenticatedStudentRequest, res) => {
   try {
-    const { studentId, courseCode, major, weekday, startTime, teacherName } = req.body;
+    const { studentId, courseCode, courseName, major, weekday, startTime, teacherName } = req.body;
 
     if (!studentId || !Number.isFinite(Number(studentId))) {
       return res.status(400).json({ error: 'Invalid student ID in request body.' });
     }
 
-    if (!major || typeof major !== 'string' || major.trim().length === 0) {
-      return res.status(400).json({ error: 'Major is required.' });
-    }
-     if(!courseCode || typeof courseCode !== 'string' || courseCode.trim().length === 0) {
-      return res.status(400).json({ error: 'Course code is required.' });
+    // Require either courseCode or courseName (at least one)
+    const hasCourseCode = courseCode && typeof courseCode === 'string' && courseCode.trim().length > 0;
+    const hasCourseName = courseName && typeof courseName === 'string' && courseName.trim().length > 0;
+    
+    if (!hasCourseCode && !hasCourseName) {
+      return res.status(400).json({ error: 'Either course code or course name is required.' });
     }
     if (!weekday || typeof weekday !== 'string' || weekday.trim().length === 0) {
       return res.status(400).json({ error: 'Weekday is required.' });
@@ -690,52 +704,119 @@ router.post('/register-course', requireStudent(), async (req: AuthenticatedStude
       return res.status(400).json({ error: 'Invalid start time format. Expected HH:MM (e.g., "09:00" or "14:30").' });
     }
 
-    // Validate that the course exists and matches the provided major, weekday, and time
-    const { rows } = await pool.query(
-      `SELECT ta.course_code, ta.course_title, ta.weekday, 
-              to_char(ta.start_time, 'HH24:MI') AS start_time, 
-              to_char(ta.end_time, 'HH24:MI') AS end_time, 
-              ta.major_focus, ta.classroom_id, ta.teacher_id,
-              sa.display_name AS teacher_name
-       FROM teaching_assignments ta
-       LEFT JOIN staff_accounts sa ON ta.teacher_id = sa.id
-       WHERE UPPER(ta.course_code) = UPPER($1) 
-         AND LOWER(TRIM(ta.weekday)) = LOWER(TRIM($2)) 
-         AND to_char(ta.start_time, 'HH24:MI') = $3`,
-      [courseCode.trim(), weekday.trim(), normalizedStartTime]
-    );
+    // Get current semester first to filter courses
+    const currentSemester = await getCurrentSemester();
+    
+    // Validate that the course exists and matches the provided weekday and time
+    // IMPORTANT: Only allow registration for courses in the CURRENT SEMESTER
+    // Search by course code OR course name, but MUST be in current semester
+    let courseQuery: string;
+    let courseParams: any[];
+    
+    if (hasCourseCode) {
+      courseQuery = `SELECT ta.course_code, ta.course_title, ta.weekday, 
+                            to_char(ta.start_time, 'HH24:MI') AS start_time, 
+                            to_char(ta.end_time, 'HH24:MI') AS end_time, 
+                            ta.major_focus, ta.classroom_id, ta.teacher_id,
+                            ta.semester,
+                            sa.display_name AS teacher_name
+                     FROM teaching_assignments ta
+                     LEFT JOIN staff_accounts sa ON ta.teacher_id = sa.id
+                     WHERE UPPER(ta.course_code) = UPPER($1) 
+                       AND LOWER(TRIM(ta.weekday)) = LOWER(TRIM($2)) 
+                       AND to_char(ta.start_time, 'HH24:MI') = $3
+                       AND ta.semester = $4`;
+      courseParams = [courseCode.trim(), weekday.trim(), normalizedStartTime, currentSemester];
+    } else {
+      courseQuery = `SELECT ta.course_code, ta.course_title, ta.weekday, 
+                            to_char(ta.start_time, 'HH24:MI') AS start_time, 
+                            to_char(ta.end_time, 'HH24:MI') AS end_time, 
+                            ta.major_focus, ta.classroom_id, ta.teacher_id,
+                            ta.semester,
+                            sa.display_name AS teacher_name
+                     FROM teaching_assignments ta
+                     LEFT JOIN staff_accounts sa ON ta.teacher_id = sa.id
+                     WHERE LOWER(TRIM(ta.course_title)) = LOWER(TRIM($1)) 
+                       AND LOWER(TRIM(ta.weekday)) = LOWER(TRIM($2)) 
+                       AND to_char(ta.start_time, 'HH24:MI') = $3
+                       AND ta.semester = $4`;
+      courseParams = [courseName.trim(), weekday.trim(), normalizedStartTime, currentSemester];
+    }
+    
+    const { rows } = await pool.query(courseQuery, courseParams);
 
     if (rows.length === 0) {
-      // Try to find the course with just courseCode to provide better error message
-      const { rows: courseRows } = await pool.query(
-        `SELECT ta.course_code, ta.weekday, to_char(ta.start_time, 'HH24:MI') AS start_time
-         FROM teaching_assignments ta
-         WHERE UPPER(ta.course_code) = UPPER($1)`,
-        [courseCode.trim()]
-      );
+      // Try to find the course to provide better error message
+      // Check if course exists in current semester first
+      let lookupQuery: string;
+      let lookupParams: any[];
+      let searchTerm: string;
+      
+      if (hasCourseCode) {
+        lookupQuery = `SELECT ta.course_code, ta.course_title, ta.weekday, to_char(ta.start_time, 'HH24:MI') AS start_time, ta.semester
+                       FROM teaching_assignments ta
+                       WHERE UPPER(ta.course_code) = UPPER($1) AND ta.semester = $2`;
+        lookupParams = [courseCode.trim(), currentSemester];
+        searchTerm = courseCode.trim();
+      } else {
+        lookupQuery = `SELECT ta.course_code, ta.course_title, ta.weekday, to_char(ta.start_time, 'HH24:MI') AS start_time, ta.semester
+                       FROM teaching_assignments ta
+                       WHERE LOWER(TRIM(ta.course_title)) = LOWER(TRIM($1)) AND ta.semester = $2`;
+        lookupParams = [courseName.trim(), currentSemester];
+        searchTerm = courseName.trim();
+      }
+      
+      const { rows: courseRows } = await pool.query(lookupQuery, lookupParams);
       
       if (courseRows.length === 0) {
+        // Check if course exists in other semesters
+        let otherSemesterQuery: string;
+        let otherSemesterParams: any[];
+        
+        if (hasCourseCode) {
+          otherSemesterQuery = `SELECT DISTINCT ta.semester FROM teaching_assignments ta WHERE UPPER(ta.course_code) = UPPER($1)`;
+          otherSemesterParams = [courseCode.trim()];
+        } else {
+          otherSemesterQuery = `SELECT DISTINCT ta.semester FROM teaching_assignments ta WHERE LOWER(TRIM(ta.course_title)) = LOWER(TRIM($1))`;
+          otherSemesterParams = [courseName.trim()];
+        }
+        
+        const { rows: otherSemesterRows } = await pool.query(otherSemesterQuery, otherSemesterParams);
+        
+        if (otherSemesterRows.length > 0) {
+          const otherSemesters = otherSemesterRows.map((r: any) => r.semester).join(', ');
+          return res.status(404).json({ 
+            error: `Course "${searchTerm}" is not available for the current semester (${currentSemester}). This course is available in semester(s): ${otherSemesters}.` 
+          });
+        }
+        
         return res.status(404).json({ 
-          error: `Course ${courseCode} not found in the system.` 
+          error: `Course "${searchTerm}" not found in the system.` 
         });
       }
       
-      // Course exists but doesn't match the provided weekday/time
+      // Course exists in current semester but doesn't match the provided weekday/time
       const availableSlots = courseRows.map((r: any) => ({
         weekday: r.weekday,
         startTime: r.start_time
       }));
       
       return res.status(404).json({ 
-        error: `Course ${courseCode} not found with weekday "${weekday}" and start time "${startTime}".`,
+        error: `Course "${searchTerm}" not found with weekday "${weekday}" and start time "${startTime}" for semester ${currentSemester}.`,
         availableSlots: availableSlots
       });
     }
 
     const course = rows[0];
+    
+    // Double-check: Ensure the course is for the current semester (safety check)
+    if (course.semester !== currentSemester) {
+      return res.status(403).json({ 
+        error: `Course "${course.course_title}" (${course.course_code}) is not available for the current semester (${currentSemester}). This course is assigned to semester ${course.semester}.` 
+      });
+    }
 
     // Check if registration period is still open
-    const currentSemester = await getCurrentSemester();
     const { getRegistrationStatus } = await import('../services/systemService.js');
     const registrationStatus = await getRegistrationStatus(currentSemester);
     
@@ -757,7 +838,7 @@ router.post('/register-course', requireStudent(), async (req: AuthenticatedStude
        WHERE tr.student_id = $1
          AND tr.course_code = $2
        LIMIT 1`,
-      [id, courseCode.trim()]
+      [id, course.course_code] // Use the course code from the found course
     );
 
     if (existingRoster.length > 0) {
@@ -787,22 +868,55 @@ router.post('/register-course', requireStudent(), async (req: AuthenticatedStude
       });
     }
 
-    // Validate major matches
-    if (course.major_focus?.trim().toLowerCase() !== major.trim().toLowerCase()) {
-      return res.status(400).json({ 
-        error: `Major mismatch. Expected: ${course.major_focus}, Provided: ${major}` 
-      });
-    }
-
     // Register the student for the course
     try {
       const enrollment = await registerStudentForClassroom(
         id,
         course.classroom_id,
-        courseCode.trim(),
+        course.course_code, // Use the course code from the found course
         course.weekday,
         course.start_time
       );
+
+      // Ensure class_registrations entry exists (registerStudentForClassroom should create it, but verify)
+      try {
+        const semester = currentSemester || '1/2026';
+        
+        // Check if class_registrations entry already exists
+        const existingReg = await pool.query(
+          `SELECT id FROM class_registrations 
+           WHERE student_id = $1 AND LOWER(TRIM(class_name)) = LOWER(TRIM($2))`,
+          [id, course.course_title]
+        );
+
+        if (existingReg.rows.length === 0) {
+          // Get credits (default to 3 if not found)
+          let credits = 3;
+          try {
+            const { getCourseMetadata } = await import('../utils/majors.js');
+            const metadata = getCourseMetadata(course.course_title);
+            if (metadata?.credits) {
+              credits = metadata.credits;
+            }
+          } catch (error) {
+            console.warn('[Agent] Could not get course metadata for credits', error);
+          }
+
+          // Insert into class_registrations
+          await pool.query(
+            `INSERT INTO class_registrations 
+             (student_id, class_name, instructor, status, semester, credits, confirmed_by, registered_at)
+             VALUES ($1, $2, $3, 'registered', $4, $5, NULL, NOW())`,
+            [id, course.course_title, course.teacher_name || 'TBA', semester, credits]
+          );
+          console.log(`[Agent] Created class_registrations entry for student ${id}: ${course.course_title}`);
+        } else {
+          console.log(`[Agent] Class registration already exists for student ${id}: ${course.course_title}`);
+        }
+      } catch (regError) {
+        // Log error but don't fail the registration
+        console.error('[Agent] Failed to ensure class_registrations entry:', regError);
+      }
 
       return res.status(200).json({
         message: 'Student successfully registered for the course.',

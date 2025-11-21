@@ -34,7 +34,7 @@ interface PlanningTabProps {
   timetable: TimetableEntry[];
 }
 
-export default function PlanningTab({ schedule, registrationWindows, timetable }: PlanningTabProps) {
+export default function PlanningTab({ schedule, registrationWindows, timetable, currentSemester }: PlanningTabProps) {
   const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const sortedTimetable = [...timetable].sort((a, b) => {
     const dayDiff = dayOrder.indexOf(a.weekday) - dayOrder.indexOf(b.weekday);
@@ -155,13 +155,34 @@ export default function PlanningTab({ schedule, registrationWindows, timetable }
           </Typography>
           <Divider sx={{ borderStyle: 'dashed' }} />
           <Stack spacing={3}>
-            {registrationWindows.map((window) => (
+            {registrationWindows
+              .sort((a, b) => {
+                // Sort: current semester first, then by semester (newest first)
+                if (currentSemester) {
+                  if (a.semester === currentSemester) return -1;
+                  if (b.semester === currentSemester) return 1;
+                }
+                return b.semester.localeCompare(a.semester);
+              })
+              .map((window) => {
+                const isCurrentSemester = currentSemester && window.semester === currentSemester;
+                return (
               <Stack key={window.id} spacing={2}>
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
                   <Stack spacing={0.5}>
-                    <Typography variant="h6" fontWeight={600}>
-                      {window.semester}
-                    </Typography>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Typography variant="h6" fontWeight={600}>
+                        {window.semester}
+                      </Typography>
+                      {isCurrentSemester && (
+                        <Chip
+                          label="Current"
+                          size="small"
+                          color="primary"
+                          sx={{ fontWeight: 600 }}
+                        />
+                      )}
+                    </Stack>
                     <Typography variant="body2" color="text.secondary">
                       Opens: {formatDateTime(window.opensAt)}
                     </Typography>
@@ -217,7 +238,8 @@ export default function PlanningTab({ schedule, registrationWindows, timetable }
                   <Divider sx={{ my: 2 }} />
                 )}
               </Stack>
-            ))}
+            );
+              })}
             {!registrationWindows.length && (
               <Typography variant="body2" color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>
                 No registration windows available at this time.

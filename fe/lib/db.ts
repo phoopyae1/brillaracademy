@@ -113,6 +113,18 @@ export type StudentDashboardData = {
     confirmedBy?: number | null;
     courseCode?: string;
   }>;
+  historicalRegistrations?: Array<{
+    id: number;
+    studentId: number;
+    className: string;
+    instructor: string | null;
+    status: string;
+    registeredAt: string;
+    semester?: string;
+    credits?: number;
+    confirmedBy?: number | null;
+    courseCode?: string;
+  }>;
   classroomEnrollments: ClassroomEnrollment[];
   grades: GradeRecord[];
   upcomingExams: ExamAnnouncement[];
@@ -390,7 +402,8 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
 
   try {
     const data = await apiRequest<{ dashboard?: StudentDashboardData }>(`/students/${studentId}/dashboard`, {
-      cache: 'no-store'
+      cache: 'no-store',
+      next: { revalidate: 0 }
     });
 
     return data.dashboard ?? null;
@@ -587,6 +600,45 @@ export async function createTeachingAssignment(
   return data.assignment;
 }
 
+export async function updateTeachingAssignmentsSemester(
+  token: string,
+  fromSemester: string | null,
+  toSemester: string
+): Promise<{ updated: number; message: string }> {
+  const data = await apiRequest<{ updated: number; message: string }>(
+    '/teaching/assignments/update-semester',
+    {
+      method: 'PUT',
+      body: { fromSemester, toSemester },
+      token
+    }
+  );
+
+  return data;
+}
+
+export async function getTeachingAssignmentsDiagnostics(token: string): Promise<{
+  currentSemester: string;
+  totalAssignments: number;
+  semesterDistribution: Array<{ semester: string; count: number }>;
+  currentSemesterAssignments: number;
+  currentSemesterDetails: Array<{ id: number; course_code: string; course_title: string; major_focus: string; semester: string }>;
+  majorDistribution: Array<{ major: string; count: number }>;
+}> {
+  const data = await apiRequest<{
+    currentSemester: string;
+    totalAssignments: number;
+    semesterDistribution: Array<{ semester: string; count: number }>;
+    currentSemesterAssignments: number;
+    currentSemesterDetails: Array<{ id: number; course_code: string; course_title: string; major_focus: string; semester: string }>;
+    majorDistribution: Array<{ major: string; count: number }>;
+  }>('/teaching/assignments/diagnostics', {
+    token
+  });
+
+  return data;
+}
+
 
 export async function recordTeacherGrade(
   token: string,
@@ -617,10 +669,13 @@ export async function listClassrooms(token: string): Promise<Classroom[]> {
 }
 
 export async function listAvailableClassrooms(studentId?: number): Promise<ClassroomAvailability[]> {
-  const query = studentId ? `?studentId=${studentId}` : '';
+  const query = studentId ? `?studentId=${studentId}&_t=${Date.now()}` : `?_t=${Date.now()}`;
   const data = await apiRequest<{ classrooms?: ClassroomAvailability[] }>(
     `/classrooms/public/available${query}`,
-    { cache: 'no-store' }
+    { 
+      cache: 'no-store',
+      next: { revalidate: 0 }
+    }
   );
 
   return data.classrooms ?? [];

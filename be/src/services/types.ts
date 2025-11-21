@@ -55,6 +55,7 @@ export type StudentDashboardData = {
   timetable: TimetableEntry[];
   schedule: ScheduleItem[];
   registrations: ClassRegistration[];
+  historicalRegistrations?: ClassRegistration[];
   classroomEnrollments: ClassroomEnrollment[];
   grades: GradeRecord[];
   upcomingExams: ExamAnnouncement[];

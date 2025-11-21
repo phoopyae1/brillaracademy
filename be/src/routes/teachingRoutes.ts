@@ -6,7 +6,8 @@ import {
   listTeachingAssignments,
   listTeachingAssignmentsForTeacher,
   buildTeacherDashboard,
-  listTeacherRosters
+  listTeacherRosters,
+  updateTeachingAssignmentsSemester
 } from '../services/teachingService.js';
 import { recordStudentGrade } from '../services/academicService.js';
 import { findStaffById } from '../services/staffService.js';
@@ -128,6 +129,82 @@ router.post('/grades', requireStaff(['TEACHER']), async (req: AuthenticatedReque
   } catch (error) {
     console.error('Failed to record grade', error);
     res.status(500).json({ error: 'Unable to save grade right now.' });
+  }
+});
+
+router.put('/assignments/update-semester', requireStaff(['IT_ADMIN']), async (req: AuthenticatedRequest, res) => {
+  const { fromSemester, toSemester } = req.body;
+
+  if (!toSemester || typeof toSemester !== 'string' || toSemester.trim().length === 0) {
+    return res.status(400).json({ error: 'toSemester is required.' });
+  }
+
+  if (fromSemester !== null && fromSemester !== undefined && typeof fromSemester !== 'string') {
+    return res.status(400).json({ error: 'fromSemester must be a string or null.' });
+  }
+
+  try {
+    const result = await updateTeachingAssignmentsSemester(
+      fromSemester === undefined ? null : fromSemester,
+      toSemester.trim()
+    );
+    res.json(result);
+  } catch (error: any) {
+    console.error('Failed to update teaching assignments semester:', error);
+    const message = error?.message || 'Unable to update teaching assignments right now.';
+    res.status(500).json({ error: message });
+  }
+});
+
+router.get('/assignments/diagnostics', requireStaff(['IT_ADMIN']), async (req: AuthenticatedRequest, res) => {
+  try {
+    const pool = getPool();
+    if (!pool) {
+      return res.status(503).json({ error: 'Database not available.' });
+    }
+
+    // Get current semester
+    const { getCurrentSemester } = await import('../services/systemService.js');
+    const currentSemester = await getCurrentSemester();
+
+    // Get semester distribution
+    const { rows: semesterDist } = await pool.query(
+      `SELECT semester, COUNT(*) as count 
+       FROM teaching_assignments 
+       GROUP BY semester 
+       ORDER BY semester DESC`
+    );
+
+    // Get assignments for current semester
+    const { rows: currentSemAssignments } = await pool.query(
+      `SELECT id, course_code, course_title, major_focus, semester 
+       FROM teaching_assignments 
+       WHERE semester = $1 
+       ORDER BY major_focus, course_code`,
+      [currentSemester]
+    );
+
+    // Get major distribution for current semester
+    const { rows: majorDist } = await pool.query(
+      `SELECT major_focus, COUNT(*) as count 
+       FROM teaching_assignments 
+       WHERE semester = $1 
+       GROUP BY major_focus 
+       ORDER BY major_focus`,
+      [currentSemester]
+    );
+
+    res.json({
+      currentSemester,
+      totalAssignments: semesterDist.reduce((sum, r) => sum + Number(r.count), 0),
+      semesterDistribution: semesterDist.map(r => ({ semester: r.semester, count: Number(r.count) })),
+      currentSemesterAssignments: currentSemAssignments.length,
+      currentSemesterDetails: currentSemAssignments,
+      majorDistribution: majorDist.map(r => ({ major: r.major_focus, count: Number(r.count) }))
+    });
+  } catch (error: any) {
+    console.error('Failed to get teaching assignments diagnostics:', error);
+    res.status(500).json({ error: error?.message || 'Unable to get diagnostics.' });
   }
 });
 
