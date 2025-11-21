@@ -243,8 +243,8 @@ export default function StudentDashboard({
                     <Image
                       src="/assets/brillar-logo.png"
                       alt="Brillar Academy Logo"
-                      width={32}
-                      height={32}
+                      width={56}
+                      height={56}
                       style={{ objectFit: 'contain' }}
                     />
                     <Typography variant="body2" sx={{ color: 'primary.main', fontWeight: 600 }}>

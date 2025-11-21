@@ -499,13 +499,13 @@ export default function LoginPageContent() {
                   <Box
                     sx={{ display: "flex", justifyContent: "center", mb: 3 }}
                   >
-                <Image
+                {/* <Image
                   src="/assets/brillar-logo.png"
                   alt="Brillar Academy Logo"
-                  width={120}
-                  height={120}
+                  width={80}
+                  height={80}
                       style={{ objectFit: "contain" }}
-                />
+                /> */}
               </Box>
               <Typography variant="h4" fontWeight={700} gutterBottom>
                 Welcome back 👋

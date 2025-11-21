@@ -58,9 +58,9 @@ export default function PortalChrome({ children }: PortalChromeProps) {
               <Image
                 src="/assets/brillar-logo.png"
                 alt="Brillar Academy Logo"
-                width={40}
-                height={40}
-                style={{ objectFit: 'contain' }}
+                width={140}
+                height={60}
+                // style={{ objectFit: 'contain' }}
               />
               <Typography
                 variant="h6"
