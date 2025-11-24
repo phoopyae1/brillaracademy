@@ -133,8 +133,8 @@ router.post('/public/self-register', async (req, res) => {
   }
 });
 
-router.get('/:id/dashboard', async (req, res) => {
-  const studentId = Number(req.params.id);
+router.post('/dashboard', async (req, res) => {
+  const studentId = Number(req.body.id);
 
   if (!Number.isFinite(studentId)) {
     return res.status(400).json({ error: 'Invalid student ID.' });

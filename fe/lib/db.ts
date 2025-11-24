@@ -401,9 +401,10 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
   }
 
   try {
-    const data = await apiRequest<{ dashboard?: StudentDashboardData }>(`/students/${studentId}/dashboard`, {
+    const data = await apiRequest<{ dashboard?: StudentDashboardData }>('/students/dashboard', {
+      method: 'POST',
+      body: { id: studentId },
       cache: 'no-store',
-      next: { revalidate: 0 }
     });
 
     return data.dashboard ?? null;
