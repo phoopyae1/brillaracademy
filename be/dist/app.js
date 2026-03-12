@@ -13,6 +13,8 @@ import systemRoutes from './routes/systemRoutes.js';
 import announcementRoutes from './routes/announcementRoutes.js';
 import assignmentRoutes from './routes/assignmentRoutes.js';
 import integrationRoutes from './routes/integrationRoutes.js';
+import agentRoutes from './routes/agentRoutes.js';
+import atenxionRoutes from './routes/atenxionRoutes.js';
 export function createApp() {
     const app = express();
     app.use(cors());
@@ -33,6 +35,9 @@ export function createApp() {
     app.use('/api/announcements', announcementRoutes);
     app.use('/api/assignments', assignmentRoutes);
     app.use('/api/integration', integrationRoutes);
+    app.use('/api/agent', agentRoutes);
+    app.use('/api/atenxion', atenxionRoutes);
+    // app.use('/api/atenxion', atenxionRoutes);
     return app;
 }
 const app = createApp();

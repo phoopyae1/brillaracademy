@@ -23,7 +23,9 @@ const createClassroomSchema = z.object({
 });
 const classroomSelfRegistrationSchema = z.object({
     studentId: z.coerce.number().int().positive(),
-    courseCode: z.string().min(1).optional() // Optional for backward compatibility, but recommended
+    courseCode: z.string().min(1).optional(), // Optional for backward compatibility, but recommended
+    weekday: z.string().min(1).optional(), // Optional: specific weekday to register for (used for conflict checking)
+    startTime: z.string().min(1).optional() // Optional: specific start time to register for (used for conflict checking)
 });
 router.post('/', requireStaff(['IT_ADMIN']), async (req, res) => {
     const parseResult = createClassroomSchema.safeParse(req.body);
@@ -44,19 +46,36 @@ router.post('/:id/self-registrations', async (req, res) => {
     if (!Number.isFinite(classroomId)) {
         return res.status(400).json({ error: 'Invalid classroom id.' });
     }
+    console.log('[ClassroomRoutes] Registration request body:', JSON.stringify(req.body, null, 2));
     const parseResult = classroomSelfRegistrationSchema.safeParse(req.body);
     if (!parseResult.success) {
         return res
             .status(400)
             .json({ error: 'Invalid registration payload.', details: parseResult.error.flatten() });
     }
+    console.log('[ClassroomRoutes] Parsed registration data:', {
+        studentId: parseResult.data.studentId,
+        classroomId,
+        courseCode: parseResult.data.courseCode,
+        weekday: parseResult.data.weekday,
+        startTime: parseResult.data.startTime
+    });
     try {
-        const enrollment = await registerStudentForClassroom(parseResult.data.studentId, classroomId, parseResult.data.courseCode // Pass course code to register for specific course
+        console.log(`[ClassroomRoutes] Attempting to register student ${parseResult.data.studentId} for classroom ${classroomId}${parseResult.data.courseCode ? ` (course: ${parseResult.data.courseCode})` : ''}`);
+        const enrollment = await registerStudentForClassroom(parseResult.data.studentId, classroomId, parseResult.data.courseCode, // Pass course code to register for specific course
+        parseResult.data.weekday, // Pass specific weekday if provided (for conflict checking)
+        parseResult.data.startTime // Pass specific start time if provided (for conflict checking)
         );
+        console.log(`[ClassroomRoutes] ✓ Registration successful for student ${parseResult.data.studentId}, enrollment ID: ${enrollment.id}`);
         res.status(201).json({ enrollment });
     }
     catch (error) {
         const message = typeof error?.message === 'string' ? error.message : 'Unable to register for this course right now.';
+        console.error(`[ClassroomRoutes] ✗ Registration failed for student ${parseResult.data.studentId}:`, {
+            error: message,
+            stack: error?.stack,
+            code: error?.code
+        });
         res.status(400).json({ error: message });
     }
 });

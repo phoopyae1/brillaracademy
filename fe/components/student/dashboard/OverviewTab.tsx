@@ -24,6 +24,7 @@ import type {
   ExamAnnouncement,
   SemesterGpa,
   SemesterRegistration,
+  SemesterDate,
   FeePayment,
   ClassroomEnrollment,
   ClassroomAvailability,
@@ -62,6 +63,7 @@ interface OverviewTabProps {
   upcomingExams: UpcomingExam[];
   gpaBySemester: GPABySemester[];
   registrationWindows: RegistrationWindow[];
+  semesterDates?: SemesterDate[];
   fees: FeePayment[];
   classroomEnrollments: ClassroomEnrollment[];
   availableClassrooms: ClassroomAvailability[];
@@ -77,6 +79,7 @@ export default function OverviewTab({
   upcomingExams,
   gpaBySemester,
   registrationWindows,
+  semesterDates = [],
   fees,
   classroomEnrollments,
   availableClassrooms,
@@ -246,12 +249,38 @@ export default function OverviewTab({
                           color={nextRegistrationWindow.status === 'open' ? 'success' : 'default'}
                         />
                         <Typography variant="body2" color="text.secondary">
-                          Opens {formatDateTime(nextRegistrationWindow.opensAt)}
+                        <strong>Registration Opens:</strong> {formatDateTime(nextRegistrationWindow.opensAt)}
                         </Typography>
                       </Stack>
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                        Closes {formatDateTime(nextRegistrationWindow.closesAt)}
+                      <strong>Registration Closes:</strong> {formatDateTime(nextRegistrationWindow.closesAt)}
+                    </Typography>
+                    {(() => {
+                      const semesterDate = semesterDates.find(sd => sd.semester === nextRegistrationWindow.semester);
+                      if (semesterDate) {
+                        const startDate = new Date(semesterDate.startDate);
+                        const endDate = new Date(semesterDate.endDate);
+                        return (
+                          <>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                              <strong>Semester Starts:</strong> {new Intl.DateTimeFormat('en-US', {
+                                dateStyle: 'medium',
+                                timeZone: 'Asia/Singapore'
+                              }).format(startDate)}
+                              {semesterDate.startDay && ` (${semesterDate.startDay})`}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              <strong>Semester Ends:</strong> {new Intl.DateTimeFormat('en-US', {
+                                dateStyle: 'medium',
+                                timeZone: 'Asia/Singapore'
+                              }).format(endDate)}
+                              {semesterDate.endDay && ` (${semesterDate.endDay})`}
                       </Typography>
+                          </>
+                        );
+                      }
+                      return null;
+                    })()}
                     </Box>
                     {nextRegistrationWindow.courses.length > 0 && (
                       <>

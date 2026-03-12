@@ -245,18 +245,18 @@ export async function listRegistrationWindows(): Promise<SemesterRegistration[]>
         -- Always use semester_dates if available, otherwise use registration_windows dates
         -- Convert dates to timestamps in Singapore timezone first, then to UTC for API
         CASE 
-          WHEN sd.start_date IS NOT NULL THEN 
-            to_char((sd.start_date::date::timestamp AT TIME ZONE 'Asia/Singapore' AT TIME ZONE 'UTC'), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
           WHEN rw.opens_at IS NOT NULL THEN
             to_char(rw.opens_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+          WHEN sd.start_date IS NOT NULL THEN 
+            to_char((sd.start_date::date::timestamp AT TIME ZONE 'Asia/Singapore' AT TIME ZONE 'UTC'), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
           ELSE 
             NULL
         END AS opens_at,
         CASE 
-          WHEN sd.end_date IS NOT NULL THEN 
-            to_char(((sd.end_date::date + INTERVAL '1 day' - INTERVAL '1 second')::timestamp AT TIME ZONE 'Asia/Singapore' AT TIME ZONE 'UTC'), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
           WHEN rw.closes_at IS NOT NULL THEN
             to_char(rw.closes_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+          WHEN sd.end_date IS NOT NULL THEN 
+            to_char(((sd.end_date::date + INTERVAL '1 day' - INTERVAL '1 second')::timestamp AT TIME ZONE 'Asia/Singapore' AT TIME ZONE 'UTC'), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
           ELSE 
             NULL
         END AS closes_at
@@ -266,15 +266,97 @@ export async function listRegistrationWindows(): Promise<SemesterRegistration[]>
        ORDER BY COALESCE(sd.start_date, rw.opens_at) ASC`
     );
 
-    // Normalize and override status for current semester
-    return rows.map((row) => {
+    // Normalize and calculate status based on current date vs opens_at/closes_at
+    // Also populate courses from teaching_assignments if courses array is empty
+    const now = new Date();
+    return Promise.all(rows.map(async (row) => {
       const normalized = normalizeRegistrationWindow(row);
-      // Automatically set status to 'open' for current semester
-      if (currentSemester && normalized.semester === currentSemester) {
-        normalized.status = 'open';
+      
+      // If courses array is empty, populate from teaching_assignments
+      if (!normalized.courses || normalized.courses.length === 0) {
+        try {
+          const { listTeachingAssignments } = await import('./teachingService.js');
+          const assignments = await listTeachingAssignments();
+          const semesterAssignments = assignments.filter(a => a.semester === normalized.semester);
+          
+          // Get unique courses (by courseCode)
+          const courseMap = new Map<string, { courseCode: string; courseTitle: string; instructor: string; credits: number }>();
+          for (const assignment of semesterAssignments) {
+            if (!courseMap.has(assignment.courseCode)) {
+              // Get teacher name
+              let instructor = 'TBA';
+              try {
+                const { findStaffById } = await import('./staffService.js');
+                const teacher = await findStaffById(assignment.teacherId);
+                if (teacher) {
+                  instructor = teacher.displayName;
+                }
+              } catch (error) {
+                console.warn(`Failed to fetch teacher ${assignment.teacherId} for course ${assignment.courseCode}`);
+              }
+              
+              // Get credits from course metadata or default to 3
+              let credits = 3;
+              try {
+                const { getCourseMetadata } = await import('../utils/majors.js');
+                const metadata = getCourseMetadata(assignment.courseTitle);
+                if (metadata) {
+                  credits = metadata.credits || 3;
+                }
+              } catch (error) {
+                // Use default credits
+              }
+              
+              courseMap.set(assignment.courseCode, {
+                courseCode: assignment.courseCode,
+                courseTitle: assignment.courseTitle,
+                instructor: instructor,
+                credits: credits
+              });
+            }
+          }
+          
+          normalized.courses = Array.from(courseMap.values());
+        } catch (error) {
+          console.error(`Failed to populate courses for semester ${normalized.semester}:`, error);
+          // Keep empty array if population fails
+        }
       }
+      
+      // Calculate status based on dates if available
+      // But respect explicit 'open' status from database if set
+      if (normalized.opensAt && normalized.closesAt) {
+        const opensAt = new Date(normalized.opensAt);
+        const closesAt = new Date(normalized.closesAt);
+        
+        // If DB status is explicitly 'open', keep it open (admin override)
+        if (row.status === 'open') {
+          normalized.status = 'open';
+        } else if (now < opensAt) {
+          // Registration hasn't started yet
+          normalized.status = 'upcoming';
+        } else if (now >= opensAt && now <= closesAt) {
+          // Registration is currently open based on dates
+          // Only set to 'open' if the DB status is not explicitly 'closed'
+          if (row.status !== 'closed') {
+            normalized.status = 'open';
+          } else {
+            normalized.status = 'closed';
+          }
+        } else {
+          // Registration period has ended
+          normalized.status = 'closed';
+        }
+      } else {
+        // If dates are not available, use the status from database
+        // But if it's the current semester and status is 'upcoming', set to 'open' as fallback
+        if (currentSemester && normalized.semester === currentSemester && normalized.status === 'upcoming') {
+          normalized.status = 'open';
+        }
+      }
+      
       return normalized;
-    });
+    }));
   } catch (error) {
     console.error('Failed to fetch registration windows', error);
     return inMemoryRegistrationWindows;
@@ -298,6 +380,37 @@ export function findCourseOffering(
   }
 
   return { window, course };
+}
+
+export async function setRegistrationWindow(
+  semester: string,
+  opensAt: string,
+  closesAt: string,
+  status: 'upcoming' | 'open' | 'closed' = 'upcoming'
+): Promise<SemesterRegistration> {
+  const pool = getPool();
+
+  if (!pool) {
+    throw new Error('Database connection not available.');
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO registration_windows (semester, status, opens_at, closes_at, courses)
+       VALUES ($1, $2, $3, $4, '[]'::jsonb)
+       ON CONFLICT (semester) DO UPDATE
+       SET status = EXCLUDED.status,
+           opens_at = EXCLUDED.opens_at,
+           closes_at = EXCLUDED.closes_at
+       RETURNING id, semester, status, opens_at, closes_at, courses`,
+      [semester, status, opensAt, closesAt]
+    );
+
+    return normalizeRegistrationWindow(rows[0]);
+  } catch (error) {
+    console.error('Failed to set registration window', error);
+    throw error;
+  }
 }
 
 /**

@@ -13,7 +13,7 @@ import Typography from '@mui/material/Typography';
 import CalendarTodayRoundedIcon from '@mui/icons-material/CalendarTodayRounded';
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import EventNoteRoundedIcon from '@mui/icons-material/EventNoteRounded';
-import type { StudentDashboardData, SemesterRegistration } from '@/lib/db';
+import type { StudentDashboardData, SemesterRegistration, SemesterDate } from '@/lib/db';
 
 type ScheduleEntry = StudentDashboardData['schedule'][0];
 type RegistrationWindow = SemesterRegistration;
@@ -31,10 +31,11 @@ interface PlanningTabProps {
   currentSemester?: string;
   schedule: ScheduleEntry[];
   registrationWindows: RegistrationWindow[];
+  semesterDates?: SemesterDate[];
   timetable: TimetableEntry[];
 }
 
-export default function PlanningTab({ schedule, registrationWindows, timetable, currentSemester }: PlanningTabProps) {
+export default function PlanningTab({ schedule, registrationWindows, semesterDates = [], timetable, currentSemester }: PlanningTabProps) {
   const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const sortedTimetable = [...timetable].sort((a, b) => {
     const dayDiff = dayOrder.indexOf(a.weekday) - dayOrder.indexOf(b.weekday);
@@ -171,9 +172,9 @@ export default function PlanningTab({ schedule, registrationWindows, timetable, 
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
                   <Stack spacing={0.5}>
                     <Stack direction="row" spacing={1} alignItems="center">
-                      <Typography variant="h6" fontWeight={600}>
-                        {window.semester}
-                      </Typography>
+                    <Typography variant="h6" fontWeight={600}>
+                      {window.semester}
+                    </Typography>
                       {isCurrentSemester && (
                         <Chip
                           label="Current"
@@ -183,12 +184,40 @@ export default function PlanningTab({ schedule, registrationWindows, timetable, 
                         />
                       )}
                     </Stack>
+                    <Stack spacing={0.5}>
+                      <Typography variant="body2" color="text.secondary">
+                        <strong>Registration Opens:</strong> {formatDateTime(window.opensAt)}
+                      </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      Opens: {formatDateTime(window.opensAt)}
+                        <strong>Registration Closes:</strong> {formatDateTime(window.closesAt)}
+                      </Typography>
+                      {(() => {
+                        const semesterDate = semesterDates.find(sd => sd.semester === window.semester);
+                        if (semesterDate) {
+                          const startDate = new Date(semesterDate.startDate);
+                          const endDate = new Date(semesterDate.endDate);
+                          return (
+                            <>
+                              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                <strong>Semester Starts:</strong> {new Intl.DateTimeFormat('en-US', {
+                                  dateStyle: 'medium',
+                                  timeZone: 'Asia/Singapore'
+                                }).format(startDate)}
+                                {semesterDate.startDay && ` (${semesterDate.startDay})`}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      Closes: {formatDateTime(window.closesAt)}
+                                <strong>Semester Ends:</strong> {new Intl.DateTimeFormat('en-US', {
+                                  dateStyle: 'medium',
+                                  timeZone: 'Asia/Singapore'
+                                }).format(endDate)}
+                                {semesterDate.endDay && ` (${semesterDate.endDay})`}
                     </Typography>
+                            </>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </Stack>
                   </Stack>
                   <Chip
                     label={window.status.toUpperCase()}

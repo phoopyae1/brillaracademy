@@ -507,7 +507,7 @@ export async function listClassroomsWithAvailability(studentId?: number): Promis
          ORDER BY ta.classroom_id, ta.course_code, ta.weekday, ta.start_time, ta.teacher_id, ta.id ASC`,
         [currentSemester]
       );
-      
+
       console.log(`[ClassroomService] SQL query returned ${rows.length} rows for semester "${currentSemester}"`);
       
       // STRICT Double-check: Filter out any rows that don't match the current semester (safety check)
@@ -660,7 +660,7 @@ export async function listClassroomsWithAvailability(studentId?: number): Promis
         
         if (!classroomKeys.has(courseKey)) {
           classroomKeys.add(courseKey);
-          classroomCourses.get(classroomId)!.push(courseData);
+        classroomCourses.get(classroomId)!.push(courseData);
           console.log(`[ClassroomService] ✅ Added course "${courseData.courseTitle}" (${courseData.majorFocus}) by ${courseData.teacherName || 'Unknown'} to classroom ${classroomId} - Semester: ${row.semester}`);
         } else {
           console.log(`[ClassroomService] Skipped duplicate course "${courseData.courseTitle}" (${courseKey}) in classroom ${classroomId}`);
@@ -1265,7 +1265,7 @@ export async function registerStudentForClassroom(
             [studentId, normalizedWeekday, courseTitle, courseStartTimeFormatted, courseEndTimeFormatted, currentSemesterForConflict]
           );
           const currentSemester = await getCurrentSemester();
-          
+            
           // CRITICAL: Simple direct check - ANY course at same time on same day = CONFLICT
           // IMPORTANT: Only check conflicts within the SAME SEMESTER
           // Students can have courses at the same time in different semesters

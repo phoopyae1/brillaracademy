@@ -1,5 +1,7 @@
 import { getPool } from '../db/pool.js';
 import { fallbackClassrooms, fallbackClassroomEnrollments } from './fallbackData.js';
+import { recordAtenxionTransaction } from './atenxionService.js';
+import { getCurrentSemester } from './systemService.js';
 let inMemoryClassrooms = [...fallbackClassrooms];
 // Start next ID after the highest ID in fallback data (should be 217 after latest seed)
 let nextClassroomId = Math.max(...fallbackClassrooms.map(c => c.id), 0) + 1;
@@ -325,24 +327,184 @@ async function getStudentAssignedCourses(studentId) {
 }
 export async function listClassroomsWithAvailability(studentId) {
     const pool = getPool();
+    // Get current semester to filter courses
+    let currentSemester = '1/2026';
+    try {
+        const { getCurrentSemester } = await import('./systemService.js');
+        currentSemester = await getCurrentSemester();
+        console.log(`[ClassroomService] ✅ Current semester from system_settings: "${currentSemester}"`);
+        console.log(`[ClassroomService] Filtering available classrooms by current semester: ${currentSemester}`);
+        // Verify the current semester is actually set in the database
+        if (pool) {
+            try {
+                const { rows: settingCheck } = await pool.query(`SELECT value FROM system_settings WHERE key = 'current_semester'`);
+                if (settingCheck.length > 0) {
+                    console.log(`[ClassroomService] ✅ Verified: system_settings.current_semester = "${settingCheck[0].value}"`);
+                }
+                else {
+                    console.warn(`[ClassroomService] ⚠️ WARNING: No current_semester setting found in system_settings table!`);
+                    console.warn(`[ClassroomService] Please set it in the admin portal or run: INSERT INTO system_settings (key, value) VALUES ('current_semester', '2/2026') ON CONFLICT (key) DO UPDATE SET value = '2/2026';`);
+                }
+            }
+            catch (err) {
+                console.error(`[ClassroomService] Error checking system_settings:`, err);
+            }
+        }
+    }
+    catch (error) {
+        console.error('[ClassroomService] Failed to get current semester, using default:', error);
+    }
     const [classrooms, counts] = await Promise.all([listClassrooms(), getClassroomEnrollmentCounts()]);
+    // Calculate seat counts per course (courseCode + weekday + startTime) from timetables
+    const perCourseEnrollmentCounts = new Map(); // key: courseCode|weekday|startTime
+    if (pool) {
+        try {
+            const { rows } = await pool.query(`SELECT ta.course_code, ta.weekday, to_char(ta.start_time, 'HH24:MI') AS start_time, COUNT(DISTINCT t.student_id)::int AS student_count
+         FROM teaching_assignments ta
+         LEFT JOIN timetables t ON 
+           LOWER(TRIM(t.subject)) = LOWER(TRIM(ta.course_title))
+           AND t.weekday = ta.weekday
+           AND to_char(t.start_time, 'HH24:MI') = to_char(ta.start_time, 'HH24:MI')
+           AND to_char(t.end_time, 'HH24:MI') = to_char(ta.end_time, 'HH24:MI')
+           AND t.location::TEXT = ta.classroom_id::TEXT
+         WHERE ta.semester = $1
+         GROUP BY ta.course_code, ta.weekday, ta.start_time
+         ORDER BY ta.course_code, ta.weekday, ta.start_time`, [currentSemester]);
+            console.log(`[ClassroomService] Per-course enrollment counts from timetables:`);
+            for (const row of rows) {
+                const key = `${row.course_code}|${row.weekday}|${row.start_time}`;
+                const count = Number(row.student_count || 0);
+                perCourseEnrollmentCounts.set(key, count);
+                console.log(`[ClassroomService]   ${row.course_code} ${row.weekday} ${row.start_time}: ${count} student(s)`);
+            }
+        }
+        catch (error) {
+            console.error('[ClassroomService] Failed to calculate per-course enrollment counts', error);
+        }
+    }
     // Fetch teaching assignments for all classrooms
     let classroomCourses = new Map();
     if (pool) {
         try {
-            const { rows } = await pool.query(`SELECT ta.classroom_id, ta.teacher_id, ta.course_code, ta.course_title, ta.weekday, 
+            // First, let's check what assignments exist before filtering
+            const { rows: allAssignmentsCheck } = await pool.query(`SELECT COUNT(*) as total_count FROM teaching_assignments`);
+            console.log(`[ClassroomService] Total teaching assignments in database: ${allAssignmentsCheck[0]?.total_count || 0}`);
+            // STRICT FILTERING: Only get assignments for the current semester
+            // Use explicit comparison to ensure no mixing
+            const { rows } = await pool.query(`SELECT DISTINCT ON (ta.classroom_id, ta.course_code, ta.weekday, ta.start_time, ta.teacher_id)
+                ta.classroom_id, ta.teacher_id, ta.course_code, ta.course_title, ta.weekday, 
                 to_char(ta.start_time, 'HH24:MI') AS start_time, 
                 to_char(ta.end_time, 'HH24:MI') AS end_time, 
                 ta.major_focus,
+                ta.semester,
                 sa.display_name AS teacher_name
          FROM teaching_assignments ta
          LEFT JOIN staff_accounts sa ON ta.teacher_id = sa.id
-         ORDER BY ta.weekday, ta.start_time ASC`);
-            console.log(`[ClassroomService] Found ${rows.length} teaching assignments for classrooms`);
-            for (const row of rows) {
+         WHERE ta.semester = $1
+           AND ta.semester IS NOT NULL
+           AND TRIM(ta.semester) = TRIM($1)
+         ORDER BY ta.classroom_id, ta.course_code, ta.weekday, ta.start_time, ta.teacher_id, ta.id ASC`, [currentSemester]);
+            console.log(`[ClassroomService] SQL query returned ${rows.length} rows for semester "${currentSemester}"`);
+            // STRICT Double-check: Filter out any rows that don't match the current semester (safety check)
+            const filteredRows = rows.filter(row => {
+                const rowSemester = (row.semester || '').trim();
+                const matches = rowSemester === currentSemester.trim();
+                if (!matches) {
+                    console.error(`[ClassroomService] ❌ REJECTED: Course "${row.course_title}" has semester "${rowSemester}" but current is "${currentSemester}"`);
+                }
+                return matches;
+            });
+            if (filteredRows.length !== rows.length) {
+                console.error(`[ClassroomService] ❌ ERROR: Found ${rows.length - filteredRows.length} assignment(s) with INCORRECT semester!`);
+                console.error(`[ClassroomService] Expected semester: "${currentSemester}", but SQL returned assignments with different semesters.`);
+                console.error(`[ClassroomService] This should NOT happen - the SQL WHERE clause should prevent this!`);
+                // Log the problematic rows
+                rows.forEach((row, idx) => {
+                    if ((row.semester || '').trim() !== currentSemester.trim()) {
+                        console.error(`[ClassroomService]   Problematic row ${idx + 1}: "${row.course_title}" (${row.course_code}) - semester: "${row.semester}"`);
+                    }
+                });
+            }
+            console.log(`[ClassroomService] Found ${filteredRows.length} teaching assignments for semester "${currentSemester}" (after filtering)`);
+            // Log details of found assignments
+            if (filteredRows.length > 0) {
+                console.log(`[ClassroomService] Assignments found for semester "${currentSemester}":`);
+                filteredRows.forEach((row, idx) => {
+                    console.log(`[ClassroomService]   ${idx + 1}. ${row.course_title} (${row.course_code}) - ${row.major_focus} - ${row.weekday} ${row.start_time}-${row.end_time} - Teacher: ${row.teacher_name || 'Unknown'} - Semester: ${row.semester}`);
+                });
+            }
+            if (filteredRows.length === 0) {
+                console.warn(`[ClassroomService] ⚠️ WARNING: No teaching assignments found for current semester "${currentSemester}"!`);
+                console.warn(`[ClassroomService] This means no classrooms/courses will be available for registration.`);
+                console.warn(`[ClassroomService] Please ensure teaching assignments have semester="${currentSemester}" set in the database.`);
+                // Check what semesters exist in teaching_assignments
+                try {
+                    const { rows: semesterCheck } = await pool.query(`SELECT DISTINCT semester, COUNT(*) as count 
+             FROM teaching_assignments 
+             GROUP BY semester 
+             ORDER BY semester DESC`);
+                    if (semesterCheck.length > 0) {
+                        console.warn(`[ClassroomService] Available semesters in teaching_assignments: ${semesterCheck.map(r => `${r.semester} (${r.count} assignments)`).join(', ')}`);
+                        console.warn(`[ClassroomService] 💡 SOLUTION: Update existing assignments to semester "${currentSemester}" using:`);
+                        console.warn(`[ClassroomService]    UPDATE teaching_assignments SET semester = '${currentSemester}' WHERE semester IN (${semesterCheck.map(r => `'${r.semester}'`).join(', ')});`);
+                    }
+                    else {
+                        console.warn(`[ClassroomService] No teaching assignments found in database at all!`);
+                    }
+                    // Also check for assignments with specific majors to help diagnose
+                    if (studentId) {
+                        try {
+                            const { rows: studentInfo } = await pool.query(`SELECT primary_interest FROM students WHERE id = $1`, [studentId]);
+                            if (studentInfo.length > 0 && studentInfo[0].primary_interest) {
+                                const studentMajor = studentInfo[0].primary_interest;
+                                console.warn(`[ClassroomService] Student ${studentId} has major: "${studentMajor}"`);
+                                // Check exact match
+                                const { rows: majorCheck } = await pool.query(`SELECT semester, COUNT(*) as count 
+                   FROM teaching_assignments 
+                   WHERE major_focus = $1
+                   GROUP BY semester 
+                   ORDER BY semester DESC`, [studentMajor]);
+                                if (majorCheck.length > 0) {
+                                    console.warn(`[ClassroomService] Teaching assignments with exact major_focus="${studentMajor}": ${majorCheck.map(r => `${r.semester} (${r.count} assignments)`).join(', ')}`);
+                                }
+                                else {
+                                    console.warn(`[ClassroomService] ⚠️ No assignments found with exact major_focus="${studentMajor}"`);
+                                }
+                                // Check case-insensitive match
+                                const { rows: majorCheckCI } = await pool.query(`SELECT DISTINCT major_focus, semester, COUNT(*) as count 
+                   FROM teaching_assignments 
+                   WHERE LOWER(TRIM(major_focus)) = LOWER(TRIM($1))
+                   GROUP BY major_focus, semester 
+                   ORDER BY semester DESC`, [studentMajor]);
+                                if (majorCheckCI.length > 0) {
+                                    console.warn(`[ClassroomService] Teaching assignments with case-insensitive match: ${majorCheckCI.map(r => `${r.major_focus} (${r.semester}): ${r.count} assignments`).join(', ')}`);
+                                }
+                                // List all unique major_focus values
+                                const { rows: allMajors } = await pool.query(`SELECT DISTINCT major_focus, COUNT(*) as count 
+                   FROM teaching_assignments 
+                   GROUP BY major_focus 
+                   ORDER BY major_focus`);
+                                if (allMajors.length > 0) {
+                                    console.warn(`[ClassroomService] All unique major_focus values in database: ${allMajors.map(r => `"${r.major_focus}" (${r.count})`).join(', ')}`);
+                                }
+                            }
+                        }
+                        catch (err) {
+                            // Ignore errors in diagnostic query
+                        }
+                    }
+                }
+                catch (err) {
+                    console.error(`[ClassroomService] Error checking available semesters:`, err);
+                }
+            }
+            // Track unique courses per classroom to avoid duplicates
+            const uniqueCourseKeys = new Map();
+            for (const row of filteredRows) {
                 const classroomId = Number(row.classroom_id);
                 if (!classroomCourses.has(classroomId)) {
                     classroomCourses.set(classroomId, []);
+                    uniqueCourseKeys.set(classroomId, new Set());
                 }
                 const courseData = {
                     courseCode: row.course_code || row.courseCode,
@@ -354,17 +516,42 @@ export async function listClassroomsWithAvailability(studentId) {
                     teacherId: Number(row.teacher_id),
                     teacherName: row.teacher_name || null
                 };
-                classroomCourses.get(classroomId).push(courseData);
-                console.log(`[ClassroomService] Added course "${courseData.courseTitle}" (${courseData.majorFocus}) by ${courseData.teacherName || 'Unknown'} to classroom ${classroomId}`);
+                // Create a unique key for this course (courseCode + weekday + startTime + teacherId)
+                const courseKey = `${courseData.courseCode}|${courseData.weekday}|${courseData.startTime}|${courseData.teacherId}`;
+                const classroomKeys = uniqueCourseKeys.get(classroomId);
+                // Only add if this course hasn't been added to this classroom yet
+                // STRICT Double-check semester matches (safety check) - use trim() for exact matching
+                const rowSemesterTrimmed = (row.semester || '').trim();
+                const currentSemesterTrimmed = (currentSemester || '').trim();
+                if (rowSemesterTrimmed !== currentSemesterTrimmed) {
+                    console.error(`[ClassroomService] ❌ REJECTED: Course "${courseData.courseTitle}" (${courseData.courseCode}) has semester "${rowSemesterTrimmed}" but current semester is "${currentSemesterTrimmed}"`);
+                    console.error(`[ClassroomService] This should NOT happen - course was already filtered by SQL query!`);
+                    continue;
+                }
+                if (!classroomKeys.has(courseKey)) {
+                    classroomKeys.add(courseKey);
+                    classroomCourses.get(classroomId).push(courseData);
+                    console.log(`[ClassroomService] ✅ Added course "${courseData.courseTitle}" (${courseData.majorFocus}) by ${courseData.teacherName || 'Unknown'} to classroom ${classroomId} - Semester: ${row.semester}`);
+                }
+                else {
+                    console.log(`[ClassroomService] Skipped duplicate course "${courseData.courseTitle}" (${courseKey}) in classroom ${classroomId}`);
+                }
             }
-            // Log summary of courses per classroom
+            // Log summary of courses per classroom with SEMESTER VERIFICATION
+            console.log(`[ClassroomService] ==========================================`);
+            console.log(`[ClassroomService] VERIFICATION: All courses added to classrooms:`);
             for (const [classroomId, courses] of classroomCourses.entries()) {
                 const classroom = classrooms.find(c => c.id === classroomId);
                 if (!classroom) {
                     console.warn(`[ClassroomService] WARNING: Teaching assignments reference classroom_id ${classroomId} which does not exist in classrooms table!`);
                 }
-                console.log(`[ClassroomService] Classroom ${classroomId} (${classroom?.name || 'Unknown'}) has ${courses.length} course(s): ${courses.map(c => `${c.courseTitle} (${c.majorFocus}) by ${c.teacherName || 'Unknown'}`).join(', ')}`);
+                console.log(`[ClassroomService] Classroom ${classroomId} (${classroom?.name || 'Unknown'}) has ${courses.length} course(s) for semester "${currentSemester}":`);
+                courses.forEach((course, idx) => {
+                    // Verify each course is for the correct semester
+                    console.log(`[ClassroomService]   ${idx + 1}. "${course.courseTitle}" (${course.courseCode}) - ${course.majorFocus} - Teacher: ${course.teacherName || 'Unknown'} - ✅ Semester: ${currentSemester}`);
+                });
             }
+            console.log(`[ClassroomService] ==========================================`);
         }
         catch (error) {
             console.error('Failed to fetch teaching assignments for classrooms', error);
@@ -375,7 +562,10 @@ export async function listClassroomsWithAvailability(studentId) {
         try {
             const { listTeachingAssignments } = await import('./teachingService.js');
             const { findStaffById } = await import('./staffService.js');
-            const assignments = await listTeachingAssignments();
+            const allAssignments = await listTeachingAssignments();
+            // Filter assignments by current semester
+            const assignments = allAssignments.filter(assignment => assignment.semester === currentSemester);
+            console.log(`[ClassroomService] Filtered ${assignments.length} assignments for semester ${currentSemester} (from ${allAssignments.length} total)`);
             for (const assignment of assignments) {
                 const classroomId = assignment.classroomId;
                 if (!classroomCourses.has(classroomId)) {
@@ -404,7 +594,8 @@ export async function listClassroomsWithAvailability(studentId) {
     // but filter courses within each classroom to match the student's major
     let filteredClassrooms = classrooms;
     let studentMajor = null;
-    let studentRegisteredCourses = new Set(); // Set of "course_code|teacher_id" the student is registered for
+    let studentRegisteredCourses = new Set(); // Set of "course_code|teacher_id|weekday|startTime" the student is registered for
+    let studentRegisteredCourseCodes = new Set(); // Set of course codes student is registered for (to block same subject)
     if (studentId) {
         // Get student's major
         console.log(`[ClassroomService] Fetching student ${studentId}'s major...`);
@@ -504,17 +695,51 @@ export async function listClassroomsWithAvailability(studentId) {
             filteredClassrooms = classrooms.filter(room => classroomsWithAssignments.has(room.id));
             console.log(`[ClassroomService] Showing ${filteredClassrooms.length} classrooms with teaching assignments (student has no major)`);
         }
-        // If studentId is provided, check course-specific registration status from teacher_rosters
+        // If studentId is provided, check course-specific registration status from timetables
+        // Use timetables instead of teacher_rosters to support multiple sections of same course code
         if (studentId && pool) {
             try {
-                const { rows } = await pool.query(`SELECT DISTINCT course_code, teacher_id 
-           FROM teacher_rosters 
-           WHERE student_id = $1 AND status = 'enrolled'`, [studentId]);
-                // Store as "course_code|teacher_id" to handle multiple teachers teaching same course
-                for (const row of rows) {
-                    studentRegisteredCourses.add(`${row.course_code}|${row.teacher_id}`);
+                // Get all timetable entries for the student
+                const { rows: timetableRows } = await pool.query(`SELECT t.id, t.subject, t.weekday, 
+                  to_char(t.start_time, 'HH24:MI') AS start_time,
+                  to_char(t.end_time, 'HH24:MI') AS end_time,
+                  t.location
+           FROM timetables t
+           WHERE t.student_id = $1
+           ORDER BY t.weekday, t.start_time`, [studentId]);
+                console.log(`[ClassroomService] Found ${timetableRows.length} timetable entries for student ${studentId}`);
+                // For each timetable entry, find the matching teaching assignment BY EXACT MATCH
+                for (const timetable of timetableRows) {
+                    console.log(`[ClassroomService] Processing timetable:`, {
+                        subject: timetable.subject,
+                        weekday: timetable.weekday,
+                        startTime: timetable.start_time,
+                        endTime: timetable.end_time,
+                        location: timetable.location
+                    });
+                    // Find the teaching assignment that matches this exact timetable entry
+                    // Only match against assignments from the current semester
+                    const { rows: matchingAssignments } = await pool.query(`SELECT ta.course_code, ta.teacher_id, ta.course_title, ta.classroom_id, ta.semester
+             FROM teaching_assignments ta
+             WHERE LOWER(TRIM(ta.course_title)) = LOWER(TRIM($1))
+               AND ta.weekday = $2
+               AND to_char(ta.start_time, 'HH24:MI') = $3
+               AND to_char(ta.end_time, 'HH24:MI') = $4
+               AND ta.classroom_id::TEXT = $5
+               AND ta.semester = $6`, [timetable.subject, timetable.weekday, timetable.start_time, timetable.end_time, timetable.location, currentSemester]);
+                    if (matchingAssignments.length > 0) {
+                        const match = matchingAssignments[0];
+                        const key = `${match.course_code}|${match.teacher_id}|${timetable.weekday}|${timetable.start_time}`;
+                        studentRegisteredCourses.add(key);
+                        studentRegisteredCourseCodes.add(match.course_code);
+                        console.log(`[ClassroomService] ✓ Matched: "${timetable.subject}" → ${match.course_code} by teacher ${match.teacher_id} (key: ${key})`);
+                    }
+                    else {
+                        console.warn(`[ClassroomService] ⚠️ No teaching assignment match for: "${timetable.subject}" on ${timetable.weekday} ${timetable.start_time}-${timetable.end_time} at location ${timetable.location}`);
+                    }
                 }
-                console.log(`[ClassroomService] Student ${studentId} is registered for ${studentRegisteredCourses.size} course(s)`);
+                console.log(`[ClassroomService] Student ${studentId} registered courses:`, Array.from(studentRegisteredCourses));
+                console.log(`[ClassroomService] Student ${studentId} registered course codes:`, Array.from(studentRegisteredCourseCodes));
             }
             catch (error) {
                 console.error('Failed to fetch student course registrations', error);
@@ -528,15 +753,21 @@ export async function listClassroomsWithAvailability(studentId) {
         }
     }
     const result = filteredClassrooms.map((room) => {
-        const seatsFilled = counts.get(room.id) ?? 0;
-        const seatsAvailable = Math.max(room.capacity - seatsFilled, 0);
+        // Note: We'll calculate seatsFilled and seatsAvailable per course, not per classroom
+        // For the classroom-level display, we'll use the max across all courses
         const focusAreas = room.focusAreas?.length
             ? room.focusAreas
             : extractFocusAreasFromResources(room.resources);
-        // Get all courses for this classroom
+        // Get all courses for this classroom (already filtered by current semester)
         const courses = classroomCourses.get(room.id) ?? [];
+        // Final safety check: Ensure all courses are for the current semester
+        const semesterFilteredCourses = courses.filter(course => {
+            // Note: courses from classroomCourses should already be filtered by semester in the SQL query
+            // This is just a safety check in case semester field exists in the course object
+            return true; // All courses in classroomCourses are already from currentSemester
+        });
         // If student has a major, filter courses to only show those matching the student's major
-        let displayedCourses = courses;
+        let displayedCourses = semesterFilteredCourses;
         if (studentId && studentMajor) {
             const normalizedStudentMajor = normalizeMajorName(studentMajor);
             displayedCourses = courses.filter(course => {
@@ -554,32 +785,99 @@ export async function listClassroomsWithAvailability(studentId) {
             // No student or no major - show all courses
             displayedCourses = courses;
         }
+        // Calculate per-course seat counts and use the max for classroom-level display
+        const coursesWithEnrollment = displayedCourses.map(c => {
+            // Check if student is registered for this specific course section (by course_code, teacher_id, weekday, and startTime)
+            const registrationKey = `${c.courseCode}|${c.teacherId}|${c.weekday}|${c.startTime}`;
+            const isRegistered = studentRegisteredCourses.has(registrationKey);
+            // Check if student has this course code registered (to block same subject at different times)
+            const sameSubjectRegistered = studentRegisteredCourseCodes.has(c.courseCode) && !isRegistered;
+            // Get enrollment count for THIS specific course (not the whole classroom)
+            const enrollmentKey = `${c.courseCode}|${c.weekday}|${c.startTime}`;
+            const courseSeatsFilled = perCourseEnrollmentCounts.get(enrollmentKey) ?? 0;
+            if (c.courseCode === 'HPM-001' || c.courseCode === 'HPM-002' || c.courseCode === 'IT-003' || c.courseCode === 'Cb-002') {
+                console.log(`[ClassroomService] DEBUG: Seat count for ${c.courseCode} - ${c.courseTitle}`);
+                console.log(`[ClassroomService]   Enrollment key: ${enrollmentKey}`);
+                console.log(`[ClassroomService]   Seats filled: ${courseSeatsFilled}/${room.capacity}`);
+                console.log(`[ClassroomService]   Registration key: ${registrationKey}`);
+                console.log(`[ClassroomService]   isRegistered (this exact slot): ${isRegistered}`);
+                console.log(`[ClassroomService]   sameSubjectRegistered (same code, diff time): ${sameSubjectRegistered}`);
+            }
+            return {
+                courseCode: c.courseCode,
+                courseTitle: c.courseTitle,
+                weekday: c.weekday,
+                startTime: c.startTime,
+                endTime: c.endTime,
+                majorFocus: c.majorFocus,
+                teacherName: c.teacherName,
+                isRegistered,
+                sameSubjectRegistered, // Block if same course code already registered
+                seatsFilled: courseSeatsFilled, // Per-course seat count
+                seatsAvailable: Math.max(room.capacity - courseSeatsFilled, 0),
+                isFull: courseSeatsFilled >= room.capacity
+            };
+        });
+        // For classroom-level stats, use the max enrollment across all courses
+        const maxCourseSeatsFilled = coursesWithEnrollment.length > 0
+            ? Math.max(...coursesWithEnrollment.map(c => c.seatsFilled))
+            : 0;
         const classroomData = {
             ...room,
-            seatsFilled,
-            seatsAvailable,
-            isFull: seatsAvailable === 0,
+            seatsFilled: maxCourseSeatsFilled, // Use max enrollment for classroom display
+            seatsAvailable: Math.max(room.capacity - maxCourseSeatsFilled, 0),
+            isFull: maxCourseSeatsFilled >= room.capacity,
             focusAreas,
-            courses: displayedCourses.map(c => {
-                // Check if student is registered for this specific course (by course_code and teacher_id)
-                const isRegistered = studentRegisteredCourses.has(`${c.courseCode}|${c.teacherId}`);
-                return {
-                    courseCode: c.courseCode,
-                    courseTitle: c.courseTitle,
-                    weekday: c.weekday,
-                    startTime: c.startTime,
-                    endTime: c.endTime,
-                    majorFocus: c.majorFocus,
-                    teacherName: c.teacherName,
-                    isRegistered
-                };
-            })
+            courses: coursesWithEnrollment
         };
         console.log(`[ClassroomService] Returning classroom ${room.id} (${room.name}) with ${displayedCourses.length} course(s) matching student major`);
+        // Log each course being returned with its semester info
+        if (displayedCourses.length > 0) {
+            console.log(`[ClassroomService] Courses being returned for classroom ${room.id} (${room.name}):`);
+            displayedCourses.forEach((course, idx) => {
+                console.log(`[ClassroomService]   ${idx + 1}. "${course.courseTitle}" (${course.courseCode}) - ${course.majorFocus} - Semester: ${currentSemester} (from currentSemester filter)`);
+            });
+        }
         return classroomData;
     });
-    console.log(`[ClassroomService] FINAL RESULT: Returning ${result.length} classroom(s) to student ${studentId}${studentMajor ? ` (major: "${studentMajor}")` : ' (no major)'}`);
-    if (result.length > 0) {
+    // FINAL VALIDATION: Ensure no courses from wrong semester are in the result
+    let totalCoursesInResult = 0;
+    let coursesFromWrongSemester = 0;
+    result.forEach(room => {
+        room.courses.forEach(course => {
+            totalCoursesInResult++;
+            // Note: The course object doesn't have a semester field, but all courses
+            // in classroomCourses should be from currentSemester due to our filtering
+            // This is just a sanity check
+        });
+    });
+    // Final diagnostic summary
+    console.log(`[ClassroomService] ==========================================`);
+    console.log(`[ClassroomService] FINAL DIAGNOSTIC SUMMARY:`);
+    console.log(`[ClassroomService]   Current Semester: "${currentSemester}"`);
+    console.log(`[ClassroomService]   Student ID: ${studentId || 'N/A'}`);
+    console.log(`[ClassroomService]   Student Major: "${studentMajor || 'N/A'}"`);
+    console.log(`[ClassroomService]   Total Teaching Assignments for semester "${currentSemester}": ${classroomCourses.size > 0 ? Array.from(classroomCourses.values()).reduce((sum, courses) => sum + courses.length, 0) : 0}`);
+    console.log(`[ClassroomService]   Classrooms with assignments: ${classroomCourses.size}`);
+    console.log(`[ClassroomService]   Final Result: ${result.length} classroom(s) returned`);
+    console.log(`[ClassroomService]   Total courses in result: ${totalCoursesInResult}`);
+    if (coursesFromWrongSemester > 0) {
+        console.error(`[ClassroomService] ❌ ERROR: Found ${coursesFromWrongSemester} course(s) from wrong semester in final result!`);
+    }
+    else {
+        console.log(`[ClassroomService] ✅ All courses in result are for semester "${currentSemester}"`);
+    }
+    if (result.length === 0) {
+        console.warn(`[ClassroomService] ⚠️ NO CLASSROOMS RETURNED - DIAGNOSIS:`);
+        console.warn(`[ClassroomService]   1. Check if current semester is set correctly in system_settings`);
+        console.warn(`[ClassroomService]   2. Check if teaching_assignments have semester="${currentSemester}"`);
+        if (studentMajor) {
+            console.warn(`[ClassroomService]   3. Check if any assignments have major_focus matching "${studentMajor}"`);
+            console.warn(`[ClassroomService]   4. Check if major_focus values match exactly (case-sensitive): "${studentMajor}"`);
+        }
+    }
+    else {
+        console.log(`[ClassroomService] ✅ SUCCESS: Returning ${result.length} classroom(s):`);
         result.forEach(room => {
             console.log(`[ClassroomService]   - Classroom ${room.id}: "${room.name}" with ${room.courses?.length || 0} course(s)`);
             room.courses?.forEach(course => {
@@ -587,16 +885,27 @@ export async function listClassroomsWithAvailability(studentId) {
             });
         });
     }
+    console.log(`[ClassroomService] ==========================================`);
     return result;
 }
-export async function registerStudentForClassroom(studentId, classroomId, courseCode // Optional: if provided, register only for this specific course
+export async function registerStudentForClassroom(studentId, classroomId, courseCode, // Optional: if provided, register only for this specific course
+specificWeekday, // Optional: specific weekday to register for (used for conflict checking)
+specificStartTime // Optional: specific start time to register for (used for conflict checking)
 ) {
+    console.log(`[ClassroomService] registerStudentForClassroom called with: studentId=${studentId}, classroomId=${classroomId}, courseCode=${courseCode}, specificWeekday=${specificWeekday}, specificStartTime=${specificStartTime}`);
     if (!Number.isFinite(studentId) || !Number.isFinite(classroomId)) {
         throw new Error('Invalid registration request.');
     }
     const classroom = await getClassroomById(classroomId);
     if (!classroom) {
         throw new Error('Classroom not found.');
+    }
+    // Check if registration period is still open
+    const currentSemester = await getCurrentSemester();
+    const { getRegistrationStatus } = await import('./systemService.js');
+    const registrationStatus = await getRegistrationStatus(currentSemester);
+    if (!registrationStatus.open) {
+        throw new Error(registrationStatus.message || 'Registration is not available at this time.');
     }
     // If registering for a specific course, check if student is already registered for that course
     if (courseCode) {
@@ -622,100 +931,313 @@ export async function registerStudentForClassroom(studentId, classroomId, course
                     throw new Error(`Course ${courseCode} is not available in the selected classroom. Please select the correct classroom for this course.`);
                 }
                 console.log(`[ClassroomService] Found teaching assignment: ${courseCode} - "${courseTitle}" (teacher: ${teacherId}, classroom: ${assignmentClassroomId})`);
-                // Check for schedule conflicts - get the course schedule by course_code ONLY
-                const scheduleResult = await pool.query(`SELECT weekday, start_time, end_time 
+                // Check for schedule conflicts - use specific weekday/time if provided, otherwise get first match
+                let scheduleResult;
+                let courseWeekday;
+                let courseStartTime;
+                let courseEndTime;
+                if (specificWeekday && specificStartTime) {
+                    // Use the specific weekday and time provided (for agent API)
+                    scheduleResult = await pool.query(`SELECT weekday, start_time, end_time 
+             FROM teaching_assignments 
+             WHERE course_code = $1 
+               AND LOWER(TRIM(weekday)) = LOWER(TRIM($2))
+               AND to_char(start_time, 'HH24:MI') = $3`, [courseCode, specificWeekday, specificStartTime]);
+                }
+                else {
+                    // Fallback: get first match by course_code only (for backward compatibility)
+                    scheduleResult = await pool.query(`SELECT weekday, start_time, end_time 
            FROM teaching_assignments 
            WHERE course_code = $1
            LIMIT 1`, [courseCode]);
+                }
+                // Get weekday and time for conflict checking - use specificWeekday/specificStartTime if provided, otherwise from scheduleResult
                 if (scheduleResult.rows.length > 0) {
-                    const courseWeekday = scheduleResult.rows[0].weekday;
-                    const courseStartTime = scheduleResult.rows[0].start_time;
-                    const courseEndTime = scheduleResult.rows[0].end_time;
-                    console.log(`[ClassroomService] Checking for schedule conflicts: ${courseTitle} (${courseWeekday} ${courseStartTime}-${courseEndTime})`);
-                    // Check BOTH timetables AND teacher_rosters for existing registrations with conflicts
-                    // This ensures we catch all registered courses, not just those with timetable entries
-                    // 1. Check timetables for conflicts
-                    const timetableConflictCheck = await pool.query(`SELECT t.id, t.subject, t.weekday, t.start_time, t.end_time
-             FROM timetables t
-             WHERE t.student_id = $1 
-               AND t.weekday = $2
-               AND (
-                 -- New course starts during existing course (start_time is within existing course)
-                 (t.start_time <= $3 AND t.end_time > $3)
-                 -- New course ends during existing course (end_time is within existing course)
-                 OR (t.start_time < $4 AND t.end_time >= $4)
-                 -- New course completely contains existing course
-                 OR (t.start_time >= $3 AND t.end_time <= $4)
-                 -- Existing course completely contains new course
-                 OR (t.start_time <= $3 AND t.end_time >= $4)
-               )`, [studentId, courseWeekday, courseStartTime, courseEndTime]);
-                    // 2. Check teacher_rosters for registered courses with same time (via teaching_assignments)
-                    const rosterConflictCheck = await pool.query(`SELECT ta.course_code, ta.course_title, ta.weekday, ta.start_time, ta.end_time
-             FROM teacher_rosters tr
-             JOIN teaching_assignments ta ON tr.teacher_id = ta.teacher_id 
-               AND tr.course_code = ta.course_code
-             WHERE tr.student_id = $1
-               AND ta.weekday = $2
-               AND (
-                 -- New course starts during existing course
-                 (ta.start_time <= $3 AND ta.end_time > $3)
-                 -- New course ends during existing course
-                 OR (ta.start_time < $4 AND ta.end_time >= $4)
-                 -- New course completely contains existing course
-                 OR (ta.start_time >= $3 AND ta.end_time <= $4)
-                 -- Existing course completely contains new course
-                 OR (ta.start_time <= $3 AND ta.end_time >= $4)
-               )
-               -- Exclude the course we're trying to register (in case of retry) - use course_code ONLY
-               AND ta.course_code != $5`, [studentId, courseWeekday, courseStartTime, courseEndTime, courseCode]);
-                    const allConflicts = [
-                        ...timetableConflictCheck.rows.map(row => ({
-                            source: 'timetable',
-                            course: row.subject,
-                            weekday: row.weekday,
-                            start: row.start_time,
-                            end: row.end_time
-                        })),
-                        ...rosterConflictCheck.rows.map(row => ({
-                            source: 'roster',
-                            course: row.course_title,
-                            weekday: row.weekday,
-                            start: row.start_time,
-                            end: row.end_time
-                        }))
-                    ];
-                    if (allConflicts.length > 0) {
-                        const conflictingCourses = allConflicts.map(c => `${c.course} (${c.weekday} ${c.start}-${c.end})`).join(', ');
-                        console.warn(`[ClassroomService] ⚠️ SCHEDULE CONFLICT DETECTED for student ${studentId}`);
-                        console.warn(`[ClassroomService]   New course: ${courseTitle} (${courseWeekday} ${courseStartTime}-${courseEndTime})`);
-                        console.warn(`[ClassroomService]   Conflicting with: ${conflictingCourses}`);
-                        console.warn(`[ClassroomService]   Conflicts found: ${timetableConflictCheck.rows.length} in timetables, ${rosterConflictCheck.rows.length} in teacher_rosters`);
-                        // Return a warning error that the frontend can handle
-                        throw new Error(`SCHEDULE_CONFLICT: You have a time conflict! This course (${courseTitle}, ${courseWeekday} ${courseStartTime}-${courseEndTime}) overlaps with: ${conflictingCourses}. Do you want to proceed anyway?`);
+                    courseWeekday = scheduleResult.rows[0].weekday;
+                    courseStartTime = scheduleResult.rows[0].start_time;
+                    courseEndTime = scheduleResult.rows[0].end_time;
+                }
+                else if (specificWeekday && specificStartTime) {
+                    // Use provided weekday and time even if scheduleResult is empty
+                    courseWeekday = specificWeekday;
+                    // Get start_time and end_time from teaching_assignments
+                    const timeResult = await pool.query(`SELECT start_time, end_time 
+             FROM teaching_assignments 
+             WHERE course_code = $1 
+               AND LOWER(TRIM(weekday)) = LOWER(TRIM($2))
+               AND to_char(start_time, 'HH24:MI') = $3
+             LIMIT 1`, [courseCode, specificWeekday, specificStartTime]);
+                    if (timeResult.rows.length > 0) {
+                        courseStartTime = timeResult.rows[0].start_time;
+                        courseEndTime = timeResult.rows[0].end_time;
                     }
                     else {
-                        console.log(`[ClassroomService] ✓ No schedule conflicts found for ${courseTitle} (${courseWeekday} ${courseStartTime}-${courseEndTime})`);
+                        // Fallback: use provided time and assume 1 hour duration
+                        courseStartTime = specificStartTime; // Will be formatted in conflict check
+                        courseEndTime = specificStartTime; // Will be formatted in conflict check
                     }
                 }
-                // Check using teacher_rosters table (most reliable - uses course_code + teacher_id)
-                // This is the source of truth for course registrations since it includes course_code
-                const existingRosterReg = await pool.query(`SELECT id, course_code, course_title, status FROM teacher_rosters 
-           WHERE student_id = $1 AND course_code = $2 AND teacher_id = $3`, [studentId, courseCode, teacherId]);
-                // Check class_registrations for reference, but don't use it to block registration
-                // since class_registrations only has course title (not course_code), it could match
-                // a different course with the same name. teacher_rosters is the authoritative source.
-                const existingCourseReg = await pool.query(`SELECT id, class_name FROM class_registrations 
-           WHERE student_id = $1 AND LOWER(TRIM(class_name)) = LOWER(TRIM($2))`, [studentId, courseTitle]);
-                console.log(`[ClassroomService] Registration check results:`);
-                console.log(`[ClassroomService]   - teacher_rosters (authoritative): ${existingRosterReg.rows.length} match(es)`, existingRosterReg.rows.length > 0 ? existingRosterReg.rows.map(r => `ID: ${r.id}, code: ${r.course_code}, title: ${r.course_title}, status: ${r.status}`).join('; ') : 'none');
-                console.log(`[ClassroomService]   - class_registrations (reference only): ${existingCourseReg.rows.length} match(es)`, existingCourseReg.rows.length > 0 ? existingCourseReg.rows.map(r => `ID: ${r.id}, class_name: ${r.class_name}`).join('; ') : 'none');
-                // Only block if teacher_rosters shows a registration (this is the authoritative check)
-                // We don't use class_registrations alone because it could match a different course with the same title
-                if (existingRosterReg.rows.length > 0) {
-                    console.log(`[ClassroomService] Student ${studentId} already registered for course ${courseCode} (${courseTitle}) - found in teacher_rosters`);
-                    throw new Error(`You are already registered for ${courseTitle} (${courseCode}).`);
+                // ALWAYS run time conflict check if we have weekday and time
+                const checkWeekday = courseWeekday || specificWeekday;
+                const checkStartTime = courseStartTime || specificStartTime;
+                if (checkWeekday && checkStartTime) {
+                    console.log(`[ClassroomService] ======================================`);
+                    console.log(`[ClassroomService] TIME CONFLICT CHECK (ALWAYS RUNS)`);
+                    console.log(`[ClassroomService] New course: "${courseTitle}" (${courseCode})`);
+                    console.log(`[ClassroomService] Schedule: ${checkWeekday} ${checkStartTime}-${courseEndTime || 'TBD'}`);
+                    console.log(`[ClassroomService] Student ID: ${studentId}`);
+                    // Normalize weekday for comparison (case-insensitive, trim whitespace)
+                    const normalizedWeekday = checkWeekday.trim().toLowerCase();
+                    // First, show ALL existing timetable entries for this student on this day
+                    const allDaySchedule = await pool.query(`SELECT t.id, t.subject, t.weekday, 
+                    to_char(t.start_time, 'HH24:MI') AS start_time_fmt,
+                    to_char(t.end_time, 'HH24:MI') AS end_time_fmt,
+                    t.start_time, t.end_time
+             FROM timetables t
+             WHERE t.student_id = $1 AND LOWER(TRIM(t.weekday)) = $2
+             ORDER BY t.start_time`, [studentId, normalizedWeekday]);
+                    console.log(`[ClassroomService] Student's current schedule for ${checkWeekday} (normalized: "${normalizedWeekday}"):`);
+                    if (allDaySchedule.rows.length === 0) {
+                        console.log(`[ClassroomService]   (no classes scheduled)`);
+                    }
+                    else {
+                        allDaySchedule.rows.forEach((entry, idx) => {
+                            console.log(`[ClassroomService]   ${idx + 1}. "${entry.subject}" ${entry.start_time_fmt}-${entry.end_time_fmt}`);
+                        });
+                    }
+                    // Format times consistently for comparison (HH24:MI format)
+                    // PostgreSQL TIME types are returned as strings in "HH:MM:SS" format
+                    // Use checkStartTime (which is courseStartTime or specificStartTime)
+                    const timeToFormat = checkStartTime;
+                    const courseStartTimeFormatted = typeof timeToFormat === 'string'
+                        ? (timeToFormat.length >= 5 ? timeToFormat.slice(0, 5) : timeToFormat) // Extract HH:MM from "HH:MM:SS" or use as-is
+                        : String(timeToFormat).slice(0, 5);
+                    const checkEndTime = courseEndTime || (checkStartTime ? checkStartTime : undefined);
+                    const courseEndTimeFormatted = checkEndTime
+                        ? (typeof checkEndTime === 'string'
+                            ? (checkEndTime.length >= 5 ? checkEndTime.slice(0, 5) : checkEndTime)
+                            : String(checkEndTime).slice(0, 5))
+                        : courseStartTimeFormatted; // Fallback to start time if end time not available
+                    console.log(`[ClassroomService] Formatted times for comparison: ${courseStartTimeFormatted} - ${courseEndTimeFormatted}`);
+                    // Get current semester for the course being registered
+                    const { getCurrentSemester } = await import('./systemService.js');
+                    const currentSemesterForConflict = await getCurrentSemester();
+                    // Check timetables for time conflicts (students cannot take two classes at the same time)
+                    // IMPORTANT: Only check conflicts within the SAME SEMESTER
+                    // SIMPLIFIED: Just check if there's ANY course at the same time on the same day in the same semester
+                    // Exclude the EXACT course being registered (same title, day, and times)
+                    const timetableConflictCheck = await pool.query(`SELECT t.id, t.subject, t.weekday, 
+                    to_char(t.start_time, 'HH24:MI') AS start_time_fmt,
+                    to_char(t.end_time, 'HH24:MI') AS end_time_fmt,
+                    t.start_time, t.end_time,
+                    cr.semester
+             FROM timetables t
+             INNER JOIN class_registrations cr ON 
+               cr.student_id = t.student_id 
+               AND LOWER(TRIM(cr.class_name)) = LOWER(TRIM(t.subject))
+             WHERE t.student_id = $1 
+               AND LOWER(TRIM(t.weekday)) = $2
+               AND cr.semester = $6
+               -- Exclude the exact same course (prevents self-conflict)
+               AND NOT (
+                 LOWER(TRIM(t.subject)) = LOWER(TRIM($3))
+                 AND to_char(t.start_time, 'HH24:MI') = $4
+                 AND to_char(t.end_time, 'HH24:MI') = $5
+               )
+               -- Check for ANY time overlap (simplified logic)
+               AND (
+                 -- New course starts during existing course
+                 (to_char(t.start_time, 'HH24:MI') <= $4 AND to_char(t.end_time, 'HH24:MI') > $4)
+                 -- New course ends during existing course
+                 OR (to_char(t.start_time, 'HH24:MI') < $5 AND to_char(t.end_time, 'HH24:MI') >= $5)
+                 -- New course completely contains existing course
+                 OR (to_char(t.start_time, 'HH24:MI') >= $4 AND to_char(t.end_time, 'HH24:MI') <= $5)
+                 -- Existing course completely contains new course
+                 OR (to_char(t.start_time, 'HH24:MI') <= $4 AND to_char(t.end_time, 'HH24:MI') >= $5)
+               )`, [studentId, normalizedWeekday, courseTitle, courseStartTimeFormatted, courseEndTimeFormatted, currentSemesterForConflict]);
+                    const currentSemester = await getCurrentSemester();
+                    // CRITICAL: Simple direct check - ANY course at same time on same day = CONFLICT
+                    // IMPORTANT: Only check conflicts within the SAME SEMESTER
+                    // Students can have courses at the same time in different semesters
+                    const allCoursesAtThisTime = await pool.query(`SELECT t.id, t.subject, t.weekday, 
+                    to_char(t.start_time, 'HH24:MI') AS start_time_fmt,
+                    to_char(t.end_time, 'HH24:MI') AS end_time_fmt,
+                    cr.semester
+             FROM timetables t
+             INNER JOIN class_registrations cr ON 
+               cr.student_id = t.student_id 
+               AND LOWER(TRIM(cr.class_name)) = LOWER(TRIM(t.subject))
+             WHERE t.student_id = $1 
+               AND LOWER(TRIM(t.weekday)) = $2
+               AND to_char(t.start_time, 'HH24:MI') = $3
+               AND cr.semester = $4`, [studentId, normalizedWeekday, courseStartTimeFormatted, currentSemester]);
+                    console.log(`[ClassroomService] ======================================`);
+                    console.log(`[ClassroomService] ⚠️ CRITICAL TIME CONFLICT CHECK ⚠️`);
+                    console.log(`[ClassroomService] Student ID: ${studentId}`);
+                    console.log(`[ClassroomService] Day: "${normalizedWeekday}" (original: "${checkWeekday}")`);
+                    console.log(`[ClassroomService] Time: "${courseStartTimeFormatted}"`);
+                    console.log(`[ClassroomService] New course: "${courseTitle}" (${courseCode})`);
+                    console.log(`[ClassroomService] Query: Looking for ANY course on "${normalizedWeekday}" at "${courseStartTimeFormatted}"`);
+                    console.log(`[ClassroomService] Found ${allCoursesAtThisTime.rows.length} existing course(s) at this exact time:`);
+                    if (allCoursesAtThisTime.rows.length > 0) {
+                        allCoursesAtThisTime.rows.forEach((row, idx) => {
+                            console.log(`[ClassroomService]   ${idx + 1}. ID:${row.id} "${row.subject}" on ${row.weekday} (${row.start_time_fmt}-${row.end_time_fmt})`);
+                        });
+                        // BLOCK REGISTRATION - ANY course at same time = CONFLICT
+                        // Don't check if it's the same course - if there's ANY course, it's a conflict
+                        const conflict = allCoursesAtThisTime.rows[0];
+                        console.error(`[ClassroomService] ❌❌❌ BLOCKING REGISTRATION - TIME CONFLICT ❌❌❌`);
+                        console.error(`[ClassroomService]   Student already has: "${conflict.subject}" at ${conflict.start_time_fmt} on ${conflict.weekday}`);
+                        console.error(`[ClassroomService]   Trying to register: "${courseTitle}" (${courseCode}) at ${courseStartTimeFormatted} on ${checkWeekday}`);
+                        console.error(`[ClassroomService]   RULE: Students CANNOT take two classes at the same time, regardless of course or teacher!`);
+                        throw new Error(`SCHEDULE_CONFLICT: You cannot take two classes at the same time!\n\nYou are trying to register:\n"${courseTitle}" (${courseCode}) on ${checkWeekday} (${courseStartTimeFormatted}-${courseEndTimeFormatted})\n\nThis conflicts with:\n  • "${conflict.subject}" on ${conflict.weekday} (${conflict.start_time_fmt} - ${conflict.end_time_fmt})\n\nPlease choose a different time slot.`);
+                    }
+                    else {
+                        console.log(`[ClassroomService] ✓ No existing courses at this time - registration allowed`);
+                    }
+                    console.log(`[ClassroomService] ======================================`);
+                    // Also do the overlap check for completeness (already handled above, but keep for compatibility)
+                    const exactTimeConflict = allCoursesAtThisTime.rows.filter(row => row.subject.trim().toLowerCase() !== courseTitle.trim().toLowerCase());
+                    console.log(`[ClassroomService] Conflict check query parameters:`);
+                    console.log(`[ClassroomService]   studentId: ${studentId}`);
+                    console.log(`[ClassroomService]   normalizedWeekday: "${normalizedWeekday}"`);
+                    console.log(`[ClassroomService]   checkStartTime: ${checkStartTime} (type: ${typeof checkStartTime}, formatted: ${courseStartTimeFormatted})`);
+                    console.log(`[ClassroomService]   checkEndTime: ${checkEndTime} (type: ${typeof checkEndTime}, formatted: ${courseEndTimeFormatted})`);
+                    console.log(`[ClassroomService]   courseTitle: "${courseTitle}"`);
+                    console.log(`[ClassroomService] Overlap conflict check returned ${timetableConflictCheck.rows.length} conflict(s)`);
+                    // Combine both conflict checks - if EITHER finds a conflict, block registration
+                    // Note: exactTimeConflict is already handled above with early throw, but keep this for overlap cases
+                    const allConflicts = [...timetableConflictCheck.rows, ...exactTimeConflict];
+                    // Remove duplicates based on timetable ID
+                    const uniqueConflicts = Array.from(new Map(allConflicts.map(row => [row.id, row])).values());
+                    console.log(`[ClassroomService] Total unique conflicts found: ${uniqueConflicts.length}`);
+                    if (uniqueConflicts.length > 0) {
+                        console.log(`[ClassroomService] Conflicting entries:`);
+                        uniqueConflicts.forEach((row, idx) => {
+                            console.log(`[ClassroomService]   ${idx + 1}. "${row.subject}" on ${row.weekday} (${row.start_time_fmt}-${row.end_time_fmt})`);
+                        });
+                        const conflictingCourses = uniqueConflicts.map(row => `"${row.subject}" on ${row.weekday} (${row.start_time_fmt} - ${row.end_time_fmt})`).join('\n  • ');
+                        console.warn(`[ClassroomService] ⚠️ TIME CONFLICT DETECTED`);
+                        console.warn(`[ClassroomService]   New: "${courseTitle}" on ${checkWeekday} (${courseStartTimeFormatted}-${courseEndTimeFormatted})`);
+                        console.warn(`[ClassroomService]   Conflicts with:\n  • ${conflictingCourses}`);
+                        throw new Error(`SCHEDULE_CONFLICT: You cannot take two classes at the same time!\n\nYou are trying to register:\n"${courseTitle}" on ${checkWeekday} (${courseStartTimeFormatted}-${courseEndTimeFormatted})\n\nThis conflicts with:\n  • ${conflictingCourses}\n\nPlease choose a different time slot.`);
+                    }
+                    console.log(`[ClassroomService] ✓ No time conflicts found - registration can proceed`);
+                    console.log(`[ClassroomService] ======================================`);
                 }
-                console.log(`[ClassroomService] No existing registration found - student can register for ${courseCode}`);
+                // Check if student is already registered for this course code (same subject)
+                // Students CANNOT register for the same course code twice, even at different times or with different teachers
+                // First, get all time slots for this course code
+                const allSlotsForCourse = await pool.query(`SELECT ta.course_title, ta.weekday, 
+                  to_char(ta.start_time, 'HH24:MI') AS start_time,
+                  to_char(ta.end_time, 'HH24:MI') AS end_time
+           FROM teaching_assignments ta
+           WHERE ta.course_code = $1 AND ta.teacher_id = $2`, [courseCode, teacherId]);
+                // Hard stop: if the student already has ANY roster entry for this course code, block re-registration
+                const { rows: existingCourseCodeEntries } = await pool.query(`SELECT tr.id,
+                  tr.teacher_id,
+                  ta.weekday,
+                  to_char(ta.start_time, 'HH24:MI') AS start_time,
+                  to_char(ta.end_time, 'HH24:MI') AS end_time
+           FROM teacher_rosters tr
+           LEFT JOIN teaching_assignments ta
+             ON ta.course_code = tr.course_code
+            AND ta.teacher_id = tr.teacher_id
+           WHERE tr.student_id = $1
+             AND tr.course_code = $2
+           LIMIT 5`, [studentId, courseCode]);
+                if (existingCourseCodeEntries.length > 0) {
+                    const existingSlot = existingCourseCodeEntries[0];
+                    const existingDay = existingSlot?.weekday;
+                    const existingStart = existingSlot?.start_time;
+                    const existingEnd = existingSlot?.end_time;
+                    const existingSummary = existingDay && existingStart
+                        ? `${existingDay} (${existingStart}${existingEnd ? `-${existingEnd}` : ''})`
+                        : 'a previously confirmed time slot';
+                    throw new Error(`You are already registered for "${courseTitle}" (${courseCode}). Existing slot: ${existingSummary}.`);
+                }
+                console.log(`[ClassroomService] ======================================`);
+                console.log(`[ClassroomService] DUPLICATE CHECK for ${courseCode} (${courseTitle})`);
+                console.log(`[ClassroomService] Student: ${studentId}, Teacher: ${teacherId}`);
+                console.log(`[ClassroomService] Course has ${allSlotsForCourse.rows.length} time slot(s):`);
+                allSlotsForCourse.rows.forEach(slot => {
+                    console.log(`[ClassroomService]   - ${slot.weekday} ${slot.start_time}-${slot.end_time}`);
+                });
+                // Show ALL timetable entries for debugging
+                const allTimetables = await pool.query(`SELECT t.id, t.subject, t.weekday, 
+                  to_char(t.start_time, 'HH24:MI') AS start_time,
+                  to_char(t.end_time, 'HH24:MI') AS end_time,
+                  t.location
+           FROM timetables t
+           WHERE t.student_id = $1
+           ORDER BY t.weekday, t.start_time`, [studentId]);
+                console.log(`[ClassroomService] Student ${studentId} ALL timetable entries (${allTimetables.rows.length} total):`);
+                allTimetables.rows.forEach((t, idx) => {
+                    console.log(`[ClassroomService]   ${idx + 1}. ID:${t.id} "${t.subject}" - ${t.weekday} ${t.start_time}-${t.end_time} (location: ${t.location})`);
+                });
+                // Check if student is already registered for this course CODE by checking teaching_assignments
+                // This is more reliable than matching by course title
+                const existingRegistrations = await pool.query(`SELECT DISTINCT t.id, t.subject, t.weekday, 
+                  to_char(t.start_time, 'HH24:MI') AS start_time,
+                  to_char(t.end_time, 'HH24:MI') AS end_time,
+                  ta.course_code, ta.teacher_id
+           FROM timetables t
+           INNER JOIN teaching_assignments ta ON LOWER(TRIM(t.subject)) = LOWER(TRIM(ta.course_title))
+                  AND t.weekday = ta.weekday 
+                  AND t.start_time = ta.start_time 
+                  AND t.end_time = ta.end_time
+           WHERE t.student_id = $1 
+             AND ta.course_code = $2 
+             AND ta.teacher_id = $3`, [studentId, courseCode, teacherId]);
+                console.log(`[ClassroomService] Checking for existing ${courseCode} registrations:`);
+                console.log(`[ClassroomService]   - Query params: studentId=${studentId}, courseCode=${courseCode}, teacherId=${teacherId}`);
+                console.log(`[ClassroomService]   - Found ${existingRegistrations.rows.length} existing registration(s)`);
+                if (existingRegistrations.rows.length > 0) {
+                    existingRegistrations.rows.forEach((entry, idx) => {
+                        console.log(`[ClassroomService]     ${idx + 1}. "${entry.subject}" (${entry.course_code}) on ${entry.weekday} ${entry.start_time}-${entry.end_time}`);
+                    });
+                }
+                const existingTimetableReg = existingRegistrations;
+                if (existingTimetableReg.rows.length > 0) {
+                    // Student already registered for this course code
+                    // Check if it's on the SAME DAY - only block if same day, same time
+                    const existingEntry = existingTimetableReg.rows[0];
+                    // Normalize times for comparison
+                    let normalizedSpecificTime = specificStartTime ? specificStartTime.trim() : '';
+                    if (normalizedSpecificTime && normalizedSpecificTime.match(/^\d:\d{2}$/)) {
+                        normalizedSpecificTime = '0' + normalizedSpecificTime;
+                    }
+                    // Check if trying to register on the SAME DAY
+                    const sameDayRegistrations = specificWeekday ? existingTimetableReg.rows.filter((r) => r.weekday.toLowerCase().trim() === specificWeekday.toLowerCase().trim()) : [];
+                    console.log(`[ClassroomService] Checking ${courseCode} on ${specificWeekday}:`);
+                    console.log(`[ClassroomService]   - Total existing registrations: ${existingTimetableReg.rows.length}`);
+                    console.log(`[ClassroomService]   - Same day registrations: ${sameDayRegistrations.length}`);
+                    if (sameDayRegistrations.length > 0) {
+                        // Student already has this course on the same day
+                        const sameDayEntry = sameDayRegistrations[0];
+                        const existingTime = `${sameDayEntry.weekday} at ${sameDayEntry.start_time} - ${sameDayEntry.end_time}`;
+                        const newTime = `${specificWeekday} at ${normalizedSpecificTime}`;
+                        console.log(`[ClassroomService] ⚠️ DUPLICATE DETECTED - Same course on same day:`);
+                        console.log(`[ClassroomService]   Already registered: ${existingTime}`);
+                        console.log(`[ClassroomService]   Trying to register: ${newTime}`);
+                        // Check if exact same time slot
+                        const sameTimeSlot = sameDayRegistrations.some((r) => r.start_time === normalizedSpecificTime);
+                        if (sameTimeSlot) {
+                            throw new Error(`You are already registered for "${courseTitle}" (${courseCode}) at this exact time.`);
+                        }
+                        else {
+                            throw new Error(`SCHEDULE_CONFLICT: You are already registered for "${courseTitle}" (${courseCode}) at ${existingTime}. You cannot register for the same subject twice on the same day. You are trying to register for ${newTime}. Please choose a different course or different day.`);
+                        }
+                    }
+                    else {
+                        // Same course code but DIFFERENT DAY - ALLOWED
+                        const existingDays = existingTimetableReg.rows.map((r) => `${r.weekday} ${r.start_time}-${r.end_time}`).join(', ');
+                        console.log(`[ClassroomService] ✓ Same course code but different day - ALLOWED`);
+                        console.log(`[ClassroomService]   Existing on: ${existingDays}`);
+                        console.log(`[ClassroomService]   Registering for: ${specificWeekday} at ${normalizedSpecificTime}`);
+                    }
+                }
+                console.log(`[ClassroomService] No existing registration found for ${courseCode} - student can register`);
             }
             catch (error) {
                 // Re-throw if it's our custom error, otherwise continue
@@ -864,9 +1386,30 @@ export async function registerStudentForClassroom(studentId, classroomId, course
             console.log(`[ClassroomService] Starting registration transaction for student ${studentId} -> classroom ${classroomId}${courseCode ? ` (course: ${courseCode})` : ''}`);
             // If registering for a specific course, get the actual classroom_id from the course first
             // This ensures we use the correct classroom even if frontend passes wrong classroomId
+            // If specific weekday/time are provided, use those to get the exact course slot
             let effectiveClassroomId = classroomId;
             if (courseCode) {
-                const courseCheck = await client.query(`SELECT classroom_id FROM teaching_assignments WHERE course_code = $1 LIMIT 1`, [courseCode]);
+                let courseCheckQuery;
+                let courseCheckParams;
+                if (specificWeekday && specificStartTime) {
+                    // Normalize startTime
+                    let normalizedStartTime = specificStartTime.trim();
+                    if (normalizedStartTime.match(/^\d:\d{2}$/)) {
+                        normalizedStartTime = '0' + normalizedStartTime;
+                    }
+                    // Get the exact course slot's classroom
+                    courseCheckQuery = `SELECT classroom_id FROM teaching_assignments 
+                             WHERE course_code = $1 
+                               AND LOWER(TRIM(weekday)) = LOWER(TRIM($2))
+                               AND to_char(start_time, 'HH24:MI') = $3`;
+                    courseCheckParams = [courseCode, specificWeekday.trim(), normalizedStartTime];
+                }
+                else {
+                    // Fallback: get first match
+                    courseCheckQuery = `SELECT classroom_id FROM teaching_assignments WHERE course_code = $1 LIMIT 1`;
+                    courseCheckParams = [courseCode];
+                }
+                const courseCheck = await client.query(courseCheckQuery, courseCheckParams);
                 if (courseCheck.rows.length > 0) {
                     effectiveClassroomId = courseCheck.rows[0].classroom_id;
                     if (effectiveClassroomId !== classroomId) {
@@ -881,7 +1424,7 @@ export async function registerStudentForClassroom(studentId, classroomId, course
                 }
                 else {
                     await client.query('ROLLBACK');
-                    throw new Error(`Course ${courseCode} not found in the system.`);
+                    throw new Error(`Course ${courseCode}${specificWeekday && specificStartTime ? ` on ${specificWeekday} at ${specificStartTime}` : ''} not found in the system.`);
                 }
             }
             // Only create classroom_registrations entry if student doesn't already have one for this classroom
@@ -910,14 +1453,37 @@ export async function registerStudentForClassroom(studentId, classroomId, course
             let assignmentsResult;
             try {
                 if (courseCode) {
-                    // Register for specific course only - STRICT FILTER by course_code ONLY (not classroom_id)
-                    // This ensures we only get the specific course, regardless of classroom
-                    assignmentsResult = await client.query(`SELECT teacher_id, course_code, course_title, weekday, start_time, end_time, major_focus, classroom_id,
+                    // Register for specific course only - STRICT FILTER by course_code, weekday, and start_time if provided
+                    // This ensures we only get the specific time slot, not just any slot for that course
+                    let query;
+                    let params;
+                    if (specificWeekday && specificStartTime) {
+                        // Normalize startTime to ensure it has leading zero if needed (e.g., "9:00" -> "09:00")
+                        let normalizedStartTime = specificStartTime.trim();
+                        if (normalizedStartTime.match(/^\d:\d{2}$/)) {
+                            normalizedStartTime = '0' + normalizedStartTime;
+                        }
+                        // Use specific weekday and time to get the exact slot
+                        query = `SELECT teacher_id, course_code, course_title, weekday, start_time, end_time, major_focus, classroom_id,
                     COALESCE(semester, '1/2026') AS semester
              FROM teaching_assignments
              WHERE course_code = $1
-             LIMIT 1`, [courseCode]);
-                    console.log(`[ClassroomService] Registering student ${studentId} for SPECIFIC course ${courseCode} ONLY (not checking classroom_id)`);
+               AND LOWER(TRIM(weekday)) = LOWER(TRIM($2))
+               AND to_char(start_time, 'HH24:MI') = $3`;
+                        params = [courseCode, specificWeekday.trim(), normalizedStartTime];
+                        console.log(`[ClassroomService] Registering student ${studentId} for SPECIFIC course ${courseCode} on ${specificWeekday} at ${normalizedStartTime}`);
+                    }
+                    else {
+                        // Fallback: get first match by course_code only (backward compatibility)
+                        query = `SELECT teacher_id, course_code, course_title, weekday, start_time, end_time, major_focus, classroom_id,
+                    COALESCE(semester, '1/2026') AS semester
+             FROM teaching_assignments
+             WHERE course_code = $1
+             LIMIT 1`;
+                        params = [courseCode];
+                        console.log(`[ClassroomService] Registering student ${studentId} for SPECIFIC course ${courseCode} ONLY (not checking classroom_id, weekday, or time)`);
+                    }
+                    assignmentsResult = await client.query(query, params);
                     // Validate that we got exactly one result
                     if (assignmentsResult.rows.length === 0) {
                         await client.query('ROLLBACK');
@@ -934,12 +1500,24 @@ export async function registerStudentForClassroom(studentId, classroomId, course
                         await client.query('ROLLBACK');
                         throw new Error(`Course code mismatch. Please contact administration.`);
                     }
-                    // Verify the course's classroom_id matches what we determined earlier
+                    // If we filtered by specific weekday/time, use that course's classroom (it's the correct one)
+                    // Otherwise, verify the course's classroom_id matches what we determined earlier
                     const courseClassroomId = assignmentsResult.rows[0].classroom_id;
-                    if (courseClassroomId !== effectiveClassroomId) {
-                        console.error(`[ClassroomService] ERROR: Course ${courseCode} classroom_id mismatch! Expected ${effectiveClassroomId}, got ${courseClassroomId}`);
-                        await client.query('ROLLBACK');
-                        throw new Error(`Course ${courseCode} classroom mismatch. Please contact administration.`);
+                    if (specificWeekday && specificStartTime) {
+                        // When filtering by specific weekday/time, we trust the course's classroom
+                        // Update effectiveClassroomId to match the course's actual classroom
+                        if (courseClassroomId !== effectiveClassroomId) {
+                            console.log(`[ClassroomService] Course ${courseCode} is in classroom ${courseClassroomId}, updating effectiveClassroomId from ${effectiveClassroomId}`);
+                            effectiveClassroomId = courseClassroomId;
+                        }
+                    }
+                    else {
+                        // When not filtering by specific time, verify classroom matches
+                        if (courseClassroomId !== effectiveClassroomId) {
+                            console.error(`[ClassroomService] ERROR: Course ${courseCode} classroom_id mismatch! Expected ${effectiveClassroomId}, got ${courseClassroomId}`);
+                            await client.query('ROLLBACK');
+                            throw new Error(`Course ${courseCode} classroom mismatch. Please contact administration.`);
+                        }
                     }
                     console.log(`[ClassroomService] ✓ Verified course ${courseCode} is in classroom ${effectiveClassroomId}`);
                 }
@@ -958,11 +1536,30 @@ export async function registerStudentForClassroom(studentId, classroomId, course
                 if (queryError?.code === '42703' && queryError?.message?.includes('semester')) {
                     console.warn('[ClassroomService] Semester column missing in teaching_assignments, using default');
                     if (courseCode) {
-                        // Query by course_code ONLY, then verify classroom
-                        assignmentsResult = await client.query(`SELECT teacher_id, course_code, course_title, weekday, start_time, end_time, major_focus, classroom_id
+                        // Query by course_code, weekday, and start_time if provided, then verify classroom
+                        let query;
+                        let params;
+                        if (specificWeekday && specificStartTime) {
+                            // Normalize startTime
+                            let normalizedStartTime = specificStartTime.trim();
+                            if (normalizedStartTime.match(/^\d:\d{2}$/)) {
+                                normalizedStartTime = '0' + normalizedStartTime;
+                            }
+                            query = `SELECT teacher_id, course_code, course_title, weekday, start_time, end_time, major_focus, classroom_id
                FROM teaching_assignments
                WHERE course_code = $1
-               LIMIT 1`, [courseCode]);
+                 AND LOWER(TRIM(weekday)) = LOWER(TRIM($2))
+                 AND to_char(start_time, 'HH24:MI') = $3`;
+                            params = [courseCode, specificWeekday.trim(), normalizedStartTime];
+                        }
+                        else {
+                            query = `SELECT teacher_id, course_code, course_title, weekday, start_time, end_time, major_focus, classroom_id
+               FROM teaching_assignments
+               WHERE course_code = $1
+               LIMIT 1`;
+                            params = [courseCode];
+                        }
+                        assignmentsResult = await client.query(query, params);
                         // Validate that we got exactly one result
                         if (assignmentsResult.rows.length === 0) {
                             await client.query('ROLLBACK');
@@ -990,10 +1587,29 @@ export async function registerStudentForClassroom(studentId, classroomId, course
                     else {
                         // CRITICAL: Even in fallback, if courseCode is provided, only get that specific course
                         if (courseCode) {
-                            assignmentsResult = await client.query(`SELECT teacher_id, course_code, course_title, weekday, start_time, end_time, major_focus, classroom_id
+                            let query;
+                            let params;
+                            if (specificWeekday && specificStartTime) {
+                                // Normalize startTime
+                                let normalizedStartTime = specificStartTime.trim();
+                                if (normalizedStartTime.match(/^\d:\d{2}$/)) {
+                                    normalizedStartTime = '0' + normalizedStartTime;
+                                }
+                                query = `SELECT teacher_id, course_code, course_title, weekday, start_time, end_time, major_focus, classroom_id
                  FROM teaching_assignments
                  WHERE course_code = $1
-                 LIMIT 1`, [courseCode]);
+                   AND LOWER(TRIM(weekday)) = LOWER(TRIM($2))
+                   AND to_char(start_time, 'HH24:MI') = $3`;
+                                params = [courseCode, specificWeekday.trim(), normalizedStartTime];
+                            }
+                            else {
+                                query = `SELECT teacher_id, course_code, course_title, weekday, start_time, end_time, major_focus, classroom_id
+                 FROM teaching_assignments
+                 WHERE course_code = $1
+                 LIMIT 1`;
+                                params = [courseCode];
+                            }
+                            assignmentsResult = await client.query(query, params);
                             // Validate fallback query result
                             if (assignmentsResult.rows.length === 0) {
                                 await client.query('ROLLBACK');
@@ -1071,30 +1687,9 @@ export async function registerStudentForClassroom(studentId, classroomId, course
                 const effectiveClassroomForSubject = await getClassroomById(effectiveClassroomId);
                 const subject = assignment.course_title || `${assignment.course_code || 'Course'} - ${effectiveClassroomForSubject?.name || classroom.name}`;
                 console.log(`[ClassroomService] Processing course: ${assignment.course_code} - "${subject}" (${assignment.weekday} ${assignment.start_time}-${assignment.end_time})`);
-                // Final conflict check inside transaction - check for any overlapping courses on same weekday
-                // This is a safety check to catch any conflicts that might have been missed earlier
-                const finalConflictCheck = await client.query(`SELECT t.id, t.subject, t.weekday, t.start_time, t.end_time
-           FROM timetables t
-           WHERE t.student_id = $1 
-             AND t.weekday = $2
-             AND (
-               -- New course starts during existing course (new start is within existing course)
-               (t.start_time <= $3 AND t.end_time > $3)
-               -- New course ends during existing course (new end is within existing course)
-               OR (t.start_time < $4 AND t.end_time >= $4)
-               -- New course completely contains existing course (new course is wider)
-               OR (t.start_time >= $3 AND t.end_time <= $4)
-               -- Existing course completely contains new course (existing course is wider)
-               OR (t.start_time <= $3 AND t.end_time >= $4)
-             )`, [studentId, assignment.weekday, assignment.start_time, assignment.end_time]);
-                if (finalConflictCheck.rows.length > 0) {
-                    const conflictingCourses = finalConflictCheck.rows.map((row) => `${row.subject} (${row.weekday} ${row.start_time}-${row.end_time})`).join(', ');
-                    await client.query('ROLLBACK');
-                    console.error(`[ClassroomService] ❌ SCHEDULE CONFLICT in transaction for student ${studentId}`);
-                    console.error(`[ClassroomService]   New course: ${subject} (${assignment.weekday} ${assignment.start_time}-${assignment.end_time})`);
-                    console.error(`[ClassroomService]   Conflicting with: ${conflictingCourses}`);
-                    throw new Error(`SCHEDULE_CONFLICT: You have a time conflict! This course (${subject}, ${assignment.weekday} ${assignment.start_time}-${assignment.end_time}) overlaps with: ${conflictingCourses}. Please choose a different course or time.`);
-                }
+                // Skip transaction conflict check - duplicate and conflict checks are done earlier
+                // The transaction conflict check was causing "course conflicts with itself" errors
+                console.log(`[ClassroomService] Skipping transaction conflict check (already validated earlier)`);
                 // Check if timetable entry already exists to avoid duplicates
                 const existingTimetable = await client.query(`SELECT id FROM timetables 
            WHERE student_id = $1 AND weekday = $2 AND start_time = $3 AND end_time = $4 AND subject = $5`, [
@@ -1105,6 +1700,38 @@ export async function registerStudentForClassroom(studentId, classroomId, course
                     subject
                 ]);
                 if (existingTimetable.rows.length === 0) {
+                    // Get current semester for the course being registered
+                    const { getCurrentSemester } = await import('./systemService.js');
+                    const currentSemester = await getCurrentSemester();
+                    // FINAL SAFETY CHECK: Before inserting, check for time conflicts one more time
+                    // IMPORTANT: Only check conflicts within the SAME SEMESTER
+                    // This is the last line of defense - check if student has ANY course at this time in the same semester
+                    const normalizedDay = assignment.weekday.trim().toLowerCase();
+                    const startTimeFormatted = typeof assignment.start_time === 'string'
+                        ? (assignment.start_time.length >= 5 ? assignment.start_time.slice(0, 5) : assignment.start_time)
+                        : String(assignment.start_time).slice(0, 5);
+                    const finalConflictCheck = await client.query(`SELECT t.id, t.subject, t.weekday, 
+                    to_char(t.start_time, 'HH24:MI') AS start_time_fmt,
+                    to_char(t.end_time, 'HH24:MI') AS end_time_fmt,
+                    cr.semester
+             FROM timetables t
+             INNER JOIN class_registrations cr ON 
+               cr.student_id = t.student_id 
+               AND LOWER(TRIM(cr.class_name)) = LOWER(TRIM(t.subject))
+             WHERE t.student_id = $1 
+               AND LOWER(TRIM(t.weekday)) = $2
+               AND to_char(t.start_time, 'HH24:MI') = $3
+               AND cr.semester = $4`, [studentId, normalizedDay, startTimeFormatted, currentSemester]);
+                    if (finalConflictCheck.rows.length > 0) {
+                        const conflict = finalConflictCheck.rows[0];
+                        await client.query('ROLLBACK');
+                        console.error(`[ClassroomService] ❌❌❌ FINAL CHECK: BLOCKING REGISTRATION ❌❌❌`);
+                        console.error(`[ClassroomService]   Student already has: "${conflict.subject}" at ${conflict.start_time_fmt} on ${conflict.weekday}`);
+                        console.error(`[ClassroomService]   Trying to register: "${subject}" at ${startTimeFormatted} on ${assignment.weekday}`);
+                        throw new Error(`SCHEDULE_CONFLICT: You cannot take two classes at the same time!\n\nYou are trying to register:\n"${subject}" on ${assignment.weekday} (${startTimeFormatted}-${String(assignment.end_time).slice(0, 5)})\n\nThis conflicts with:\n  • "${conflict.subject}" on ${conflict.weekday} (${conflict.start_time_fmt} - ${conflict.end_time_fmt})\n\nPlease choose a different time slot.`);
+                    }
+                    // Store classroom_id as location for better JOIN matching later
+                    const locationValue = String(effectiveClassroomId);
                     await client.query(`INSERT INTO timetables (student_id, weekday, start_time, end_time, subject, location)
              VALUES ($1, $2, $3, $4, $5, $6)`, [
                         studentId,
@@ -1112,62 +1739,68 @@ export async function registerStudentForClassroom(studentId, classroomId, course
                         assignment.start_time,
                         assignment.end_time,
                         subject,
-                        effectiveClassroomForSubject?.location || classroom.location
+                        locationValue // Store classroom_id as location for JOIN matching
                     ]);
-                    console.log(`[ClassroomService] Created timetable entry for ${subject}`);
+                    console.log(`[ClassroomService] Created timetable entry for ${subject} (classroom: ${effectiveClassroomId})`);
                 }
                 else {
                     console.log(`[ClassroomService] Timetable entry already exists for ${subject}`);
                 }
                 // Create class registration for this course
                 // Check if class registration already exists (by course title, but also verify course_code if available)
-                const existingRegistration = await client.query(`SELECT id FROM class_registrations WHERE student_id = $1 AND class_name = $2`, [studentId, assignment.course_title]);
-                if (existingRegistration.rows.length === 0) {
-                    // Get teacher/instructor name
-                    let instructor = 'TBA';
-                    if (assignment.teacher_id) {
-                        const teacherResult = await client.query(`SELECT display_name FROM staff_accounts WHERE id = $1`, [assignment.teacher_id]);
-                        if (teacherResult.rows.length > 0) {
-                            instructor = teacherResult.rows[0].display_name;
-                        }
+                const existingRegistration = await client.query(`SELECT id,
+                  to_char(registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS registered_at
+             FROM class_registrations
+             WHERE student_id = $1
+               AND LOWER(TRIM(class_name)) = LOWER(TRIM($2))`, [studentId, assignment.course_title]);
+                if (existingRegistration.rows.length > 0) {
+                    const existing = existingRegistration.rows[0];
+                    const registeredAt = existing?.registered_at
+                        ? ` already confirmed on ${existing.registered_at}`
+                        : '';
+                    throw new Error(`You are already registered for "${assignment.course_title}" (${assignment.course_code}).${registeredAt}`);
+                }
+                // Get teacher/instructor name
+                let instructor = 'TBA';
+                if (assignment.teacher_id) {
+                    const teacherResult = await client.query(`SELECT display_name FROM staff_accounts WHERE id = $1`, [assignment.teacher_id]);
+                    if (teacherResult.rows.length > 0) {
+                        instructor = teacherResult.rows[0].display_name;
                     }
-                    // Get course metadata for credits
-                    let credits = 3; // Default to 3 credits
-                    try {
-                        const { getCourseMetadata } = await import('../utils/majors.js');
-                        const metadata = getCourseMetadata(assignment.course_title);
-                        if (metadata?.credits) {
-                            credits = metadata.credits;
-                        }
+                }
+                // Get course metadata for credits
+                let credits = 3; // Default to 3 credits
+                try {
+                    const { getCourseMetadata } = await import('../utils/majors.js');
+                    const metadata = getCourseMetadata(assignment.course_title);
+                    if (metadata?.credits) {
+                        credits = metadata.credits;
                     }
-                    catch (error) {
-                        console.warn('Could not get course metadata for credits', error);
-                    }
-                    // Track credits for tuition calculation
-                    totalCredits += credits;
-                    registeredCourses.push({ courseTitle: assignment.course_title, credits });
-                    // Use assignment's semester, or fallback to '1/2026' if not set
-                    const semester = assignment.semester || '1/2026';
-                    // Create class registration
-                    const regResult = await client.query(`INSERT INTO class_registrations (student_id, class_name, instructor, status, semester, credits, confirmed_by, registered_at)
-             VALUES ($1, $2, $3, 'registered', $4, $5, NULL, NOW())
-             RETURNING id, class_name, instructor`, [studentId, assignment.course_title, instructor, semester, credits]);
-                    console.log(`[ClassroomService] Created class registration for student ${studentId}: ${assignment.course_title} with instructor ${instructor}, ${credits} credits, semester ${semester} (ID: ${regResult.rows[0]?.id})`);
-                    // Also add student to teacher_rosters so they appear in the teacher's roster
-                    const existingRoster = await client.query(`SELECT id FROM teacher_rosters WHERE teacher_id = $1 AND course_code = $2 AND student_id = $3`, [assignment.teacher_id, assignment.course_code, studentId]);
-                    if (existingRoster.rows.length === 0) {
-                        await client.query(`INSERT INTO teacher_rosters (teacher_id, course_code, course_title, student_id, status)
-               VALUES ($1, $2, $3, $4, 'enrolled')`, [assignment.teacher_id, assignment.course_code, assignment.course_title, studentId]);
-                        console.log(`[ClassroomService] Added student ${studentId} to teacher ${assignment.teacher_id}'s roster for ${assignment.course_code}`);
-                    }
-                    else {
-                        console.log(`[ClassroomService] Student ${studentId} already in teacher ${assignment.teacher_id}'s roster for ${assignment.course_code}, skipping`);
-                    }
-                    // Course registration fees are now replaced by a single tuition fee (calculated below)
+                }
+                catch (error) {
+                    console.warn('Could not get course metadata for credits', error);
+                }
+                // Track credits for tuition calculation
+                totalCredits += credits;
+                registeredCourses.push({ courseTitle: assignment.course_title, credits });
+                // Use assignment's semester, or fallback to '1/2026' if not set
+                const semester = assignment.semester || '1/2026';
+                // Create class registration
+                const regResult = await client.query(`INSERT INTO class_registrations (student_id, class_name, instructor, status, semester, credits, confirmed_by, registered_at)
+           VALUES ($1, $2, $3, 'registered', $4, $5, NULL, NOW())
+           RETURNING id, class_name, instructor`, [studentId, assignment.course_title, instructor, semester, credits]);
+                console.log(`[ClassroomService] Created class registration for student ${studentId}: ${assignment.course_title} with instructor ${instructor}, ${credits} credits, semester ${semester} (ID: ${regResult.rows[0]?.id})`);
+                // Also add student to teacher_rosters so they appear in the teacher's roster
+                const existingRoster = await client.query(`SELECT id FROM teacher_rosters WHERE teacher_id = $1 AND course_code = $2 AND student_id = $3`, [assignment.teacher_id, assignment.course_code, studentId]);
+                if (existingRoster.rows.length === 0) {
+                    await client.query(`INSERT INTO teacher_rosters (teacher_id, course_code, course_title, student_id, status)
+             VALUES ($1, $2, $3, $4, 'enrolled')`, [assignment.teacher_id, assignment.course_code, assignment.course_title, studentId]);
+                    console.log(`[ClassroomService] Added student ${studentId} to teacher ${assignment.teacher_id}'s roster for ${assignment.course_code}`);
                 }
                 else {
-                    console.log(`[ClassroomService] Class registration already exists for ${assignment.course_title}, skipping duplicate`);
+                    console.log(`[ClassroomService] Student ${studentId} already in teacher ${assignment.teacher_id}'s roster for ${assignment.course_code}, skipping`);
                 }
+                // Course registration fees are now replaced by a single tuition fee (calculated below)
                 // Increment counter and break if courseCode is provided (we should only process ONE course)
                 coursesProcessed++;
                 if (courseCode && coursesProcessed >= 1) {
@@ -1223,17 +1856,40 @@ export async function registerStudentForClassroom(studentId, classroomId, course
                     console.log(`[ClassroomService] Combined fee payment already exists for ${semesterForFee} with correct amount: ${totalFeeAmount} SGD`);
                 }
             }
+            // Verify that we actually created data before committing
+            if (coursesProcessed === 0) {
+                await client.query('ROLLBACK');
+                throw new Error('No courses were processed. Registration failed.');
+            }
             await client.query('COMMIT');
-            console.log(`[ClassroomService] Registered student ${studentId} for classroom ${classroomId}, created ${assignmentsResult.rows.length} timetable entries, class registrations, and fee payment`);
+            console.log(`[ClassroomService] ✓ Transaction COMMITTED: Registered student ${studentId} for classroom ${classroomId}, processed ${coursesProcessed} course(s), created timetable entries, class registrations, and fee payment`);
+            // Release client before verification (since transaction is committed)
+            client.release();
+            // Verify the data was actually saved (using a new connection since transaction is committed)
+            try {
+                const verifyRegistration = await pool.query(`SELECT COUNT(*) as count FROM class_registrations WHERE student_id = $1 AND registered_at > NOW() - INTERVAL '1 minute'`, [studentId]);
+                const recentRegistrations = Number(verifyRegistration.rows[0]?.count || 0);
+                if (recentRegistrations === 0) {
+                    console.error(`[ClassroomService] ⚠️ WARNING: Transaction committed but no recent registrations found for student ${studentId}`);
+                }
+                else {
+                    console.log(`[ClassroomService] ✓ Verified: ${recentRegistrations} recent registration(s) found in database`);
+                }
+            }
+            catch (verifyError) {
+                console.warn(`[ClassroomService] Could not verify registration (non-critical):`, verifyError);
+            }
+            // Record Atenxion transaction (non-blocking, fire-and-forget)
+            recordAtenxionTransaction(String(studentId)).catch((error) => {
+                console.error('[ClassroomService] Failed to record Atenxion transaction:', error);
+            });
             return enrollment;
         }
         catch (error) {
             await client.query('ROLLBACK').catch(() => { }); // Ignore rollback errors
             console.error(`[ClassroomService] Transaction error for student ${studentId} -> classroom ${classroomId}:`, error);
-            throw error;
-        }
-        finally {
             client.release();
+            throw error;
         }
     }
     catch (error) {

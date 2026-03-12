@@ -7,8 +7,10 @@ import {
   getCurrentSemester,
   getSemesterDate,
   setSemesterDate,
-  listSemesterDates
+  listSemesterDates,
+  deleteSemesterDate
 } from '../services/systemService.js';
+import { listRegistrationWindows, setRegistrationWindow } from '../services/academicService.js';
 
 const router = Router();
 
@@ -76,13 +78,29 @@ router.get('/settings/semester-dates/:semester', requireStaff(['IT_ADMIN', 'STUD
 const updateSemesterDateSchema = z.object({
   semester: z.string().min(4).regex(/^\d+\/\d{4}$/, 'Semester must be in format "1/2026" or "2/2026"'),
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Start date must be in format YYYY-MM-DD'),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'End date must be in format YYYY-MM-DD')
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'End date must be in format YYYY-MM-DD'),
+  startDay: z.string().optional().nullable(),
+  endDay: z.string().optional().nullable()
 }).refine((data) => {
   const start = new Date(data.startDate);
   const end = new Date(data.endDate);
   return end >= start;
 }, {
   message: 'End date must be after or equal to start date'
+}).refine((data) => {
+  if (data.startDay && !['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].includes(data.startDay)) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'Start day must be a valid day of the week'
+}).refine((data) => {
+  if (data.endDay && !['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].includes(data.endDay)) {
+    return false;
+  }
+  return true;
+}, {
+  message: 'End day must be a valid day of the week'
 });
 
 router.put('/settings/semester-dates', requireStaff(['IT_ADMIN', 'STUDENT_ADMIN']), async (req: AuthenticatedRequest, res) => {
@@ -97,7 +115,9 @@ router.put('/settings/semester-dates', requireStaff(['IT_ADMIN', 'STUDENT_ADMIN'
       parseResult.data.semester,
       parseResult.data.startDate,
       parseResult.data.endDate,
-      req.staff?.id
+      req.staff?.id,
+      parseResult.data.startDay,
+      parseResult.data.endDay
     );
     res.json({ 
       message: 'Semester dates updated successfully.', 
@@ -106,6 +126,68 @@ router.put('/settings/semester-dates', requireStaff(['IT_ADMIN', 'STUDENT_ADMIN'
   } catch (error) {
     console.error('Failed to update semester dates', error);
     res.status(500).json({ error: 'Unable to update semester dates right now.' });
+  }
+});
+
+router.delete('/settings/semester-dates/:semester', requireStaff(['IT_ADMIN', 'STUDENT_ADMIN']), async (req: AuthenticatedRequest, res) => {
+  try {
+    const { semester } = req.params;
+    await deleteSemesterDate(semester);
+    res.json({ 
+      message: `Semester dates for ${semester} deleted successfully.`
+    });
+  } catch (error: any) {
+    console.error('Failed to delete semester dates', error);
+    const errorMessage = error?.message || 'Unable to delete semester dates right now.';
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// Registration windows management
+router.get('/settings/registration-windows', requireStaff(['IT_ADMIN', 'STUDENT_ADMIN']), async (req, res) => {
+  try {
+    const windows = await listRegistrationWindows();
+    res.json({ registrationWindows: windows });
+  } catch (error) {
+    console.error('Failed to fetch registration windows', error);
+    res.status(500).json({ error: 'Unable to fetch registration windows right now.' });
+  }
+});
+
+const updateRegistrationWindowSchema = z.object({
+  semester: z.string().min(4).regex(/^\d+\/\d{4}$/, 'Semester must be in format "1/2026" or "2/2026"'),
+  opensAt: z.string().datetime(),
+  closesAt: z.string().datetime(),
+  status: z.enum(['upcoming', 'open', 'closed']).optional()
+}).refine((data) => {
+  const opens = new Date(data.opensAt);
+  const closes = new Date(data.closesAt);
+  return closes >= opens;
+}, {
+  message: 'Closes at must be after or equal to opens at'
+});
+
+router.put('/settings/registration-windows', requireStaff(['IT_ADMIN', 'STUDENT_ADMIN']), async (req: AuthenticatedRequest, res) => {
+  const parseResult = updateRegistrationWindowSchema.safeParse(req.body);
+
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Invalid registration window format.', details: parseResult.error.flatten() });
+  }
+
+  try {
+    const window = await setRegistrationWindow(
+      parseResult.data.semester,
+      parseResult.data.opensAt,
+      parseResult.data.closesAt,
+      parseResult.data.status || 'upcoming'
+    );
+    res.json({ 
+      message: 'Registration window updated successfully.', 
+      registrationWindow: window 
+    });
+  } catch (error) {
+    console.error('Failed to update registration window', error);
+    res.status(500).json({ error: 'Unable to update registration window right now.' });
   }
 });
 

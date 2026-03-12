@@ -185,6 +185,18 @@ async function validateClassroomMajorMatch(classroomId, majorFocus, pool) {
 }
 export async function assignTeacherToClassroom(input, assignedBy) {
     const pool = getPool();
+    // Get current semester as default if not provided
+    let defaultSemester = '1/2026';
+    if (!input.semester) {
+        try {
+            const { getCurrentSemester } = await import('./systemService.js');
+            defaultSemester = await getCurrentSemester();
+            console.log(`[TeachingService] Using current semester as default: ${defaultSemester}`);
+        }
+        catch (error) {
+            console.error('[TeachingService] Failed to get current semester, using default:', error);
+        }
+    }
     // Validate that classroom matches the major focus
     if (input.majorFocus && input.classroomId) {
         const isValid = await validateClassroomMajorMatch(input.classroomId, input.majorFocus, pool);
@@ -209,7 +221,7 @@ export async function assignTeacherToClassroom(input, assignedBy) {
             endTime: input.endTime,
             studentGroup,
             majorFocus: input.majorFocus,
-            semester: input.semester ?? '1/2026',
+            semester: input.semester ?? defaultSemester,
             assignedBy: assignedBy ?? null,
             assignedAt
         };
@@ -217,27 +229,9 @@ export async function assignTeacherToClassroom(input, assignedBy) {
         return assignment;
     }
     try {
-        // Check for time conflicts with existing assignments in the same classroom
-        const conflictCheck = await pool.query(`SELECT id, course_code, course_title, weekday, start_time, end_time, major_focus, semester
-       FROM teaching_assignments
-       WHERE classroom_id = $1 AND weekday = $2`, [input.classroomId, input.weekday]);
-        // Helper function to convert time string to minutes for comparison
-        const timeToMinutes = (timeStr) => {
-            const [hours, minutes] = timeStr.split(':').map(Number);
-            return hours * 60 + minutes;
-        };
-        const newStart = timeToMinutes(input.startTime);
-        const newEnd = timeToMinutes(input.endTime);
-        for (const existing of conflictCheck.rows) {
-            const existingStart = timeToMinutes(existing.start_time);
-            const existingEnd = timeToMinutes(existing.end_time);
-            // Check if times overlap (new start < existing end AND new end > existing start)
-            if (newStart < existingEnd && newEnd > existingStart) {
-                throw new Error(`Classroom is already booked for ${existing.course_title} (${existing.course_code}) ` +
-                    `on ${input.weekday} from ${existing.start_time} to ${existing.end_time}. ` +
-                    `Your requested time (${input.startTime} to ${input.endTime}) conflicts with this booking.`);
-            }
-        }
+        // NOTE: Removed classroom conflict check - staff can assign same teacher to same time/day
+        // Staff have the discretion to assign teachers to multiple courses at the same time if needed
+        // This allows for flexible scheduling and different classroom/cohort assignments
         // Do not mutate classroom resources with major tags; majors are tracked on assignments
         const { rows } = await pool.query(`INSERT INTO teaching_assignments (teacher_id, classroom_id, course_code, course_title, weekday, start_time, end_time, student_group, major_focus, semester, assigned_by, assigned_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
@@ -256,14 +250,16 @@ export async function assignTeacherToClassroom(input, assignedBy) {
             assignedAt
         ]);
         const assignment = normalizeAssignment(rows[0]);
-        // Auto-enroll students with matching majors
-        try {
-            await enrollStudentsInAssignment(assignment, input, pool, assignedBy);
-        }
-        catch (enrollmentError) {
-            console.error('Failed to auto-enroll students for teaching assignment', enrollmentError);
-            // Don't fail the whole operation if enrollment fails
-        }
+        // NOTE: Auto-enrollment disabled - students must register via the portal
+        // Teacher assignments do not automatically register students
+        // Students need to confirm their registration through the student portal
+        // If you need to enroll students, use the syncEnrollmentsForAssignment function explicitly
+        // try {
+        //   await enrollStudentsInAssignment(assignment, input, pool, assignedBy);
+        // } catch (enrollmentError) {
+        //   console.error('Failed to auto-enroll students for teaching assignment', enrollmentError);
+        //   // Don't fail the whole operation if enrollment fails
+        // }
         return assignment;
     }
     catch (error) {
@@ -279,7 +275,7 @@ export async function assignTeacherToClassroom(input, assignedBy) {
             endTime: input.endTime,
             studentGroup,
             majorFocus: input.majorFocus,
-            semester: input.semester ?? '1/2026',
+            semester: input.semester ?? defaultSemester,
             assignedBy: assignedBy ?? null,
             assignedAt
         };
@@ -288,6 +284,69 @@ export async function assignTeacherToClassroom(input, assignedBy) {
     }
 }
 // Function to re-sync enrollments for an existing assignment
+// Update teaching assignments to a new semester
+export async function updateTeachingAssignmentsSemester(fromSemester, toSemester) {
+    const pool = getPool();
+    if (!pool) {
+        throw new Error('Database connection not available.');
+    }
+    try {
+        // First, check how many assignments will be updated
+        let countQuery;
+        if (fromSemester === null) {
+            countQuery = await pool.query(`SELECT COUNT(*) as count 
+         FROM teaching_assignments 
+         WHERE semester != $1 OR semester IS NULL`, [toSemester]);
+        }
+        else {
+            countQuery = await pool.query(`SELECT COUNT(*) as count 
+         FROM teaching_assignments 
+         WHERE semester = $1`, [fromSemester]);
+        }
+        const expectedCount = Number(countQuery.rows[0]?.count || 0);
+        console.log(`[TeachingService] Found ${expectedCount} assignment(s) to update to semester "${toSemester}"`);
+        if (expectedCount === 0) {
+            return {
+                updated: 0,
+                message: `No assignments found to update. ${fromSemester === null ? 'All assignments already have semester ' + toSemester + '.' : 'No assignments found with semester ' + fromSemester + '.'}`
+            };
+        }
+        let result;
+        if (fromSemester === null) {
+            // Update all assignments (any semester or NULL) to the new semester
+            result = await pool.query(`UPDATE teaching_assignments 
+         SET semester = $1 
+         WHERE semester != $1 OR semester IS NULL
+         RETURNING id, course_code, course_title, major_focus`, [toSemester]);
+        }
+        else {
+            // Update assignments from a specific semester
+            result = await pool.query(`UPDATE teaching_assignments 
+         SET semester = $1 
+         WHERE semester = $2
+         RETURNING id, course_code, course_title, major_focus`, [toSemester, fromSemester]);
+        }
+        const updated = result.rows.length || 0;
+        console.log(`[TeachingService] ✅ Successfully updated ${updated} teaching assignment(s) to semester "${toSemester}":`);
+        result.rows.forEach((row, idx) => {
+            console.log(`[TeachingService]   ${idx + 1}. ${row.course_title} (${row.course_code}) - ${row.major_focus}`);
+        });
+        // Verify the update
+        const verifyQuery = await pool.query(`SELECT COUNT(*) as count 
+       FROM teaching_assignments 
+       WHERE semester = $1`, [toSemester]);
+        const totalForSemester = Number(verifyQuery.rows[0]?.count || 0);
+        console.log(`[TeachingService] Total assignments for semester "${toSemester}" after update: ${totalForSemester}`);
+        return {
+            updated,
+            message: `Successfully updated ${updated} teaching assignment(s) to semester ${toSemester}. Total assignments for ${toSemester}: ${totalForSemester}.`
+        };
+    }
+    catch (error) {
+        console.error('[TeachingService] Failed to update teaching assignments semester:', error);
+        throw new Error(`Failed to update teaching assignments: ${error?.message || 'Unknown error'}`);
+    }
+}
 export async function syncEnrollmentsForAssignment(assignmentId) {
     const pool = getPool();
     if (!pool) {

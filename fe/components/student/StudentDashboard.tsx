@@ -88,6 +88,7 @@ export default function StudentDashboard({
     upcomingExams,
     gpaBySemester,
     registrationWindows,
+    semesterDates,
     fees,
     assignments,
     classroomEnrollments: dashboardEnrollments
@@ -190,6 +191,7 @@ export default function StudentDashboard({
             upcomingExams={upcomingExams}
             gpaBySemester={gpaBySemester}
             registrationWindows={registrationWindows}
+            semesterDates={semesterDates || []}
             fees={fees}
             classroomEnrollments={classroomEnrollments}
             availableClassrooms={availableClassrooms}
@@ -198,7 +200,7 @@ export default function StudentDashboard({
       case 'courses':
         return <CoursesTab currentSemester={currentSemester} registrations={registrations} historicalRegistrations={historicalRegistrations || []} timetable={timetable} fees={fees} />;
       case 'planning':
-        return <PlanningTab currentSemester={currentSemester} schedule={schedule} registrationWindows={registrationWindows} timetable={timetable} />;
+        return <PlanningTab currentSemester={currentSemester} schedule={schedule} registrationWindows={registrationWindows} semesterDates={semesterDates || []} timetable={timetable} />;
       case 'gpa':
         return <StatisticsTab currentSemester={currentSemester} grades={grades} gpaBySemester={gpaBySemester} registrations={registrations} />;
       // case 'gpa':
@@ -338,9 +340,9 @@ export default function StudentDashboard({
                 >
                   <Stack spacing={1}>
                     <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-                      <Typography variant="h5" fontWeight={700}>
-                        Hello, {student.firstName} 👋
-                      </Typography>
+                    <Typography variant="h5" fontWeight={700}>
+                      Hello, {student.firstName} 👋
+                    </Typography>
                       {currentSemester && (
                         <Chip
                           label={`Current Semester: ${currentSemester}`}

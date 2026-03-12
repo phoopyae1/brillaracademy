@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { requireStaff } from '../middleware/requireStaff.js';
-import { createStudent, fetchStudentById, fetchStudentDashboard, listStudents, registerStudentForSemesterCourse } from '../services/studentService.js';
+import { createStudent, fetchStudentById, fetchStudentDashboard, listStudents, registerStudentForSemesterCourse, deregisterStudentFromCourse, deleteStudent } from '../services/studentService.js';
 import { AVAILABLE_MAJORS, getSubjectsForMajor, listMajorsWithSubjects } from '../utils/majors.js';
 const router = Router();
 router.get('/public/majors', (_req, res) => {
@@ -108,13 +108,26 @@ router.post('/public/self-register', async (req, res) => {
         });
     }
 });
-router.get('/:id/dashboard', async (req, res) => {
-    const studentId = Number(req.params.id);
-    const dashboard = await fetchStudentDashboard(studentId);
-    if (!dashboard) {
-        return res.status(404).json({ error: 'Student dashboard not found.' });
+router.post('/dashboard', async (req, res) => {
+    const studentId = Number(req.body.id);
+    if (!Number.isFinite(studentId)) {
+        return res.status(400).json({ error: 'Invalid student ID.' });
     }
-    return res.json({ dashboard });
+    try {
+        const dashboard = await fetchStudentDashboard(studentId);
+        if (!dashboard) {
+            console.error(`[StudentRoutes] Dashboard not found for student ID: ${studentId}`);
+            return res.status(404).json({ error: 'Student dashboard not found.' });
+        }
+        return res.json({ dashboard });
+    }
+    catch (error) {
+        console.error(`[StudentRoutes] Error fetching dashboard for student ${studentId}:`, error);
+        return res.status(500).json({
+            error: 'Failed to fetch student dashboard.',
+            details: process.env.NODE_ENV === 'development' ? error?.message : undefined
+        });
+    }
 });
 router.get('/:id', requireStaff(), async (req, res) => {
     const studentId = Number(req.params.id);
@@ -140,6 +153,67 @@ router.post('/:id/registrations', async (req, res) => {
     catch (error) {
         const message = typeof error?.message === 'string' ? error.message : 'Unable to register for this course.';
         return res.status(400).json({ error: message });
+    }
+});
+// IT Admin: Delete student account
+router.delete('/:id', requireStaff(['IT_ADMIN']), async (req, res) => {
+    const studentId = Number(req.params.id);
+    if (!Number.isFinite(studentId)) {
+        return res.status(400).json({ error: 'Invalid student ID.' });
+    }
+    try {
+        const result = await deleteStudent(studentId);
+        return res.json(result);
+    }
+    catch (error) {
+        const message = typeof error?.message === 'string' ? error.message : 'Unable to delete student account.';
+        console.error('[StudentRoutes] Failed to delete student:', error);
+        return res.status(400).json({ error: message });
+    }
+});
+// IT Admin: Deregister student from a specific course
+router.delete('/:id/registrations/:courseCode', requireStaff(['IT_ADMIN']), async (req, res) => {
+    const studentId = Number(req.params.id);
+    const courseCode = req.params.courseCode;
+    if (!Number.isFinite(studentId)) {
+        return res.status(400).json({ error: 'Invalid student ID.' });
+    }
+    if (!courseCode || courseCode.trim().length === 0) {
+        return res.status(400).json({ error: 'Course code is required.' });
+    }
+    try {
+        const result = await deregisterStudentFromCourse(studentId, courseCode.trim());
+        return res.json(result);
+    }
+    catch (error) {
+        const message = typeof error?.message === 'string' ? error.message : 'Unable to deregister student from course.';
+        console.error('[StudentRoutes] Failed to deregister student from course:', error);
+        return res.status(400).json({ error: message });
+    }
+});
+// DEBUG: Clear all registrations for a student (for testing only)
+router.delete('/:id/registrations', async (req, res) => {
+    const studentId = Number(req.params.id);
+    if (!Number.isFinite(studentId)) {
+        return res.status(400).json({ error: 'Invalid student id.' });
+    }
+    try {
+        const { getPool } = await import('../db/pool.js');
+        const pool = getPool();
+        if (!pool) {
+            return res.status(500).json({ error: 'Database not available.' });
+        }
+        // Clear all registrations for this student
+        await pool.query('DELETE FROM timetables WHERE student_id = $1', [studentId]);
+        await pool.query('DELETE FROM class_registrations WHERE student_id = $1', [studentId]);
+        await pool.query('DELETE FROM teacher_rosters WHERE student_id = $1', [studentId]);
+        await pool.query('DELETE FROM classroom_registrations WHERE student_id = $1', [studentId]);
+        console.log(`[StudentRoutes] Cleared all registrations for student ${studentId}`);
+        return res.json({ message: `Cleared all registrations for student ${studentId}` });
+    }
+    catch (error) {
+        console.error('Failed to clear registrations:', error);
+        return res.status(500).json({ error: 'Failed to clear registrations.' });
     }
 });
 export default router;

@@ -1,9 +1,32 @@
 import { getPool } from '../db/pool.js';
 import { fallbackGrades, fallbackRegistrationWindows, fallbackSemesterGpa } from './fallbackData.js';
+import { recordAtenxionTransaction } from './atenxionService.js';
 let inMemoryGrades = [...fallbackGrades];
 let nextGradeId = fallbackGrades.length + 1;
 let inMemoryGpa = [...fallbackSemesterGpa];
 let inMemoryRegistrationWindows = [...fallbackRegistrationWindows];
+export const GPA_BASE_SCALE = 4;
+export const GPA_TARGET_SCALE = 3;
+export const GPA_SCALE_FACTOR = GPA_TARGET_SCALE / GPA_BASE_SCALE;
+const BASE_GRADE_POINTS = {
+    'A+': 4.0,
+    'A': 4.0,
+    'A-': 3.7,
+    'B+': 3.3,
+    'B': 3.0,
+    'B-': 2.7,
+    'C+': 2.3,
+    'C': 2.0,
+    'C-': 1.7,
+    'D+': 1.3,
+    'D': 1.0,
+    'D-': 0.7,
+    'F': 0.0
+};
+const GRADE_POINT_MAP = Object.fromEntries(Object.entries(BASE_GRADE_POINTS).map(([grade, value]) => [
+    grade,
+    Math.round(value * GPA_SCALE_FACTOR * 100) / 100
+]));
 function normalizeGrade(row) {
     return {
         id: row.id,
@@ -153,10 +176,54 @@ export async function listRegistrationWindows() {
         return inMemoryRegistrationWindows;
     }
     try {
-        const { rows } = await pool.query(`SELECT id, semester, status, opens_at, closes_at, courses
-       FROM registration_windows
-       ORDER BY opens_at ASC`);
-        return rows.map(normalizeRegistrationWindow);
+        // Get current semester to automatically set status to 'open' for current semester
+        let currentSemester = null;
+        try {
+            const { getCurrentSemester } = await import('./systemService.js');
+            currentSemester = await getCurrentSemester();
+        }
+        catch (error) {
+            console.warn('[AcademicService] Could not get current semester for registration windows:', error);
+        }
+        // Use FULL OUTER JOIN to show registration windows from both tables
+        // Priority: semester_dates dates > registration_windows dates
+        // If semester_dates exists but no registration_windows, create a default window
+        const { rows } = await pool.query(`SELECT 
+        COALESCE(rw.id, sd.id) AS id,
+        COALESCE(rw.semester, sd.semester) AS semester,
+        COALESCE(rw.status, 'upcoming') AS status,
+        COALESCE(rw.courses, '[]'::jsonb) AS courses,
+        -- Always use semester_dates if available, otherwise use registration_windows dates
+        -- Convert dates to timestamps in Singapore timezone first, then to UTC for API
+        CASE 
+          WHEN sd.start_date IS NOT NULL THEN 
+            to_char((sd.start_date::date::timestamp AT TIME ZONE 'Asia/Singapore' AT TIME ZONE 'UTC'), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+          WHEN rw.opens_at IS NOT NULL THEN
+            to_char(rw.opens_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+          ELSE 
+            NULL
+        END AS opens_at,
+        CASE 
+          WHEN sd.end_date IS NOT NULL THEN 
+            to_char(((sd.end_date::date + INTERVAL '1 day' - INTERVAL '1 second')::timestamp AT TIME ZONE 'Asia/Singapore' AT TIME ZONE 'UTC'), 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+          WHEN rw.closes_at IS NOT NULL THEN
+            to_char(rw.closes_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+          ELSE 
+            NULL
+        END AS closes_at
+       FROM semester_dates sd
+       FULL OUTER JOIN registration_windows rw ON sd.semester = rw.semester
+       WHERE sd.semester IS NOT NULL OR rw.semester IS NOT NULL
+       ORDER BY COALESCE(sd.start_date, rw.opens_at) ASC`);
+        // Normalize and override status for current semester
+        return rows.map((row) => {
+            const normalized = normalizeRegistrationWindow(row);
+            // Automatically set status to 'open' for current semester
+            if (currentSemester && normalized.semester === currentSemester) {
+                normalized.status = 'open';
+            }
+            return normalized;
+        });
     }
     catch (error) {
         console.error('Failed to fetch registration windows', error);
@@ -175,26 +242,11 @@ export function findCourseOffering(semester, courseCode) {
     return { window, course };
 }
 /**
- * Converts letter grade to grade point (4.0 scale)
+ * Converts letter grade to grade point (3.0 scale, A+ = 3.0)
  */
-function gradeToPoint(grade) {
+export function gradeToPoint(grade) {
     const normalizedGrade = grade.trim().toUpperCase();
-    const gradeMap = {
-        'A+': 4.0,
-        'A': 4.0,
-        'A-': 3.7,
-        'B+': 3.3,
-        'B': 3.0,
-        'B-': 2.7,
-        'C+': 2.3,
-        'C': 2.0,
-        'C-': 1.7,
-        'D+': 1.3,
-        'D': 1.0,
-        'D-': 0.7,
-        'F': 0.0
-    };
-    return gradeMap[normalizedGrade] ?? 0.0;
+    return GRADE_POINT_MAP[normalizedGrade] ?? 0.0;
 }
 /**
  * Calculates and updates GPA for a student in a specific semester
@@ -268,6 +320,7 @@ export async function recordStudentGrade(input, recordedBy) {
             };
             inMemoryGrades[existingIndex] = updated;
             console.log(`[AcademicService] Updated in-memory grade (ID: ${existing.id}, old grade: ${existing.grade} → new grade: ${input.grade})`);
+            void recordAtenxionTransaction(String(input.studentId)).catch((error) => console.error('[AcademicService] Failed to record Atenxion transaction (in-memory update):', error));
             return updated;
         }
         else {
@@ -280,6 +333,7 @@ export async function recordStudentGrade(input, recordedBy) {
             };
             inMemoryGrades = [record, ...inMemoryGrades];
             console.log(`[AcademicService] Created new in-memory grade record (ID: ${record.id})`);
+            void recordAtenxionTransaction(String(input.studentId)).catch((error) => console.error('[AcademicService] Failed to record Atenxion transaction (in-memory create):', error));
             return record;
         }
     }
@@ -362,6 +416,7 @@ export async function recordStudentGrade(input, recordedBy) {
         }
         // Calculate and update GPA for this semester (after insert or update)
         await calculateAndUpdateSemesterGPA(input.studentId, input.semester);
+        void recordAtenxionTransaction(String(input.studentId)).catch((error) => console.error('[AcademicService] Failed to record Atenxion transaction (database):', error));
         return savedGrade;
     }
     catch (error) {

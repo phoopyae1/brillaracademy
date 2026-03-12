@@ -305,15 +305,15 @@ export default function WidgetContainer() {
             widget.loading === "eager" ? "eager" : "lazy";
 
           return (
-            <Box
+        <Box
               key={`${widget.key}-${widget.src}`} // Include src in key to force remount when it changes
-              sx={{
-                width: "100%",
-                height: "100%",
-                overflow: "hidden",
-                position: "relative",
-                zIndex: 1,
-                isolation: "isolate",
+          sx={{
+            width: "100%",
+            height: "100%",
+            overflow: "hidden",
+            position: "relative",
+            zIndex: 1,
+            isolation: "isolate",
                 contain: "layout style paint size"
               }}
             >
@@ -331,7 +331,7 @@ export default function WidgetContainer() {
                   minHeight: widget.minHeight,
                   ...widget.style
                 }}
-              />
+        />
             </Box>
           );
         })()

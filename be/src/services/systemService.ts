@@ -69,6 +69,8 @@ export type SemesterDate = {
   semester: string;
   startDate: string;
   endDate: string;
+  startDay?: string | null;
+  endDay?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -82,7 +84,7 @@ export async function getSemesterDate(semester: string): Promise<SemesterDate | 
 
   try {
     const { rows } = await pool.query(
-      `SELECT id, semester, start_date, end_date, created_at, updated_at
+      `SELECT id, semester, start_date, end_date, start_day, end_day, created_at, updated_at
        FROM semester_dates
        WHERE semester = $1`,
       [semester]
@@ -98,6 +100,8 @@ export async function getSemesterDate(semester: string): Promise<SemesterDate | 
       semester: row.semester,
       startDate: row.start_date instanceof Date ? row.start_date.toISOString().split('T')[0] : row.start_date,
       endDate: row.end_date instanceof Date ? row.end_date.toISOString().split('T')[0] : row.end_date,
+      startDay: row.start_day || null,
+      endDay: row.end_day || null,
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
       updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at
     };
@@ -111,7 +115,9 @@ export async function setSemesterDate(
   semester: string,
   startDate: string,
   endDate: string,
-  updatedBy?: number
+  updatedBy?: number,
+  startDay?: string | null,
+  endDay?: string | null
 ): Promise<SemesterDate> {
   const pool = getPool();
 
@@ -121,15 +127,17 @@ export async function setSemesterDate(
 
   try {
     const { rows } = await pool.query(
-      `INSERT INTO semester_dates (semester, start_date, end_date, created_by, updated_by, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $4, NOW(), NOW())
+      `INSERT INTO semester_dates (semester, start_date, end_date, start_day, end_day, created_by, updated_by, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $6, NOW(), NOW())
        ON CONFLICT (semester) DO UPDATE
        SET start_date = EXCLUDED.start_date,
            end_date = EXCLUDED.end_date,
+           start_day = EXCLUDED.start_day,
+           end_day = EXCLUDED.end_day,
            updated_by = EXCLUDED.updated_by,
            updated_at = NOW()
-       RETURNING id, semester, start_date, end_date, created_at, updated_at`,
-      [semester, startDate, endDate, updatedBy ?? null]
+       RETURNING id, semester, start_date, end_date, start_day, end_day, created_at, updated_at`,
+      [semester, startDate, endDate, startDay || null, endDay || null, updatedBy ?? null]
     );
 
     const row = rows[0];
@@ -138,6 +146,8 @@ export async function setSemesterDate(
       semester: row.semester,
       startDate: row.start_date instanceof Date ? row.start_date.toISOString().split('T')[0] : row.start_date,
       endDate: row.end_date instanceof Date ? row.end_date.toISOString().split('T')[0] : row.end_date,
+      startDay: row.start_day || null,
+      endDay: row.end_day || null,
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
       updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at
     };
@@ -156,7 +166,7 @@ export async function listSemesterDates(): Promise<SemesterDate[]> {
 
   try {
     const { rows } = await pool.query(
-      `SELECT id, semester, start_date, end_date, created_at, updated_at
+      `SELECT id, semester, start_date, end_date, start_day, end_day, created_at, updated_at
        FROM semester_dates
        ORDER BY semester DESC`
     );
@@ -166,12 +176,39 @@ export async function listSemesterDates(): Promise<SemesterDate[]> {
       semester: row.semester,
       startDate: row.start_date instanceof Date ? row.start_date.toISOString().split('T')[0] : row.start_date,
       endDate: row.end_date instanceof Date ? row.end_date.toISOString().split('T')[0] : row.end_date,
+      startDay: row.start_day || null,
+      endDay: row.end_day || null,
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
       updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at
     }));
   } catch (error) {
     console.error('Failed to list semester dates', error);
     return [];
+  }
+}
+
+export async function deleteSemesterDate(semester: string): Promise<void> {
+  const pool = getPool();
+
+  if (!pool) {
+    throw new Error('Database connection not available.');
+  }
+
+  try {
+    const result = await pool.query(
+      `DELETE FROM semester_dates WHERE semester = $1`,
+      [semester]
+    );
+
+    // DELETE queries return rowCount, not rows
+    // Check if any rows were actually deleted
+    const deletedCount = (result as any).rowCount || 0;
+    if (deletedCount === 0) {
+      throw new Error(`Semester date for ${semester} not found.`);
+    }
+  } catch (error) {
+    console.error('Failed to delete semester date', error);
+    throw error;
   }
 }
 
@@ -242,9 +279,9 @@ export async function getRegistrationStatus(semester: string): Promise<Registrat
       }
     }
 
-    // Also check registration window closes_at
+    // Also check registration window opens_at and closes_at
     const { rows } = await pool.query(
-      `SELECT closes_at, status
+      `SELECT opens_at, closes_at, status
        FROM registration_windows
        WHERE semester = $1`,
       [semester]
@@ -260,7 +297,22 @@ export async function getRegistrationStatus(semester: string): Promise<Registrat
     }
 
     const window = rows[0];
+    const opensAt = window.opens_at instanceof Date ? window.opens_at : new Date(window.opens_at);
     const closesAt = window.closes_at instanceof Date ? window.closes_at : new Date(window.closes_at);
+
+    // Check if registration window has opened yet
+    if (now < opensAt) {
+      console.log(`[SystemService] Registration closed: Registration window opens_at (${opensAt.toISOString()}) has not been reached yet`);
+      return {
+        open: false,
+        reason: 'not_started',
+        message: `Registration is not open yet. Registration opens on ${new Intl.DateTimeFormat('en-US', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+          timeZone: 'Asia/Singapore'
+        }).format(opensAt)}.`
+      };
+    }
 
     // Check if registration period has ended
     if (now > closesAt) {

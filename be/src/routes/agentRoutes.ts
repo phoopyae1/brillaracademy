@@ -707,6 +707,14 @@ router.post('/register-course', requireStudent(), async (req: AuthenticatedStude
     // Get current semester first to filter courses
     const currentSemester = await getCurrentSemester();
     
+    // Check if registration window is open before allowing registration
+    const regStatus = await getRegistrationStatus(currentSemester);
+    if (!regStatus.open) {
+      return res.status(403).json({ 
+        error: regStatus.message || 'Registration is not available at this time.' 
+      });
+    }
+    
     // Validate that the course exists and matches the provided weekday and time
     // IMPORTANT: Only allow registration for courses in the CURRENT SEMESTER
     // Search by course code OR course name, but MUST be in current semester
@@ -715,15 +723,15 @@ router.post('/register-course', requireStudent(), async (req: AuthenticatedStude
     
     if (hasCourseCode) {
       courseQuery = `SELECT ta.course_code, ta.course_title, ta.weekday, 
-                            to_char(ta.start_time, 'HH24:MI') AS start_time, 
-                            to_char(ta.end_time, 'HH24:MI') AS end_time, 
-                            ta.major_focus, ta.classroom_id, ta.teacher_id,
+              to_char(ta.start_time, 'HH24:MI') AS start_time, 
+              to_char(ta.end_time, 'HH24:MI') AS end_time, 
+              ta.major_focus, ta.classroom_id, ta.teacher_id,
                             ta.semester,
-                            sa.display_name AS teacher_name
-                     FROM teaching_assignments ta
-                     LEFT JOIN staff_accounts sa ON ta.teacher_id = sa.id
-                     WHERE UPPER(ta.course_code) = UPPER($1) 
-                       AND LOWER(TRIM(ta.weekday)) = LOWER(TRIM($2)) 
+              sa.display_name AS teacher_name
+       FROM teaching_assignments ta
+       LEFT JOIN staff_accounts sa ON ta.teacher_id = sa.id
+       WHERE UPPER(ta.course_code) = UPPER($1) 
+         AND LOWER(TRIM(ta.weekday)) = LOWER(TRIM($2)) 
                        AND to_char(ta.start_time, 'HH24:MI') = $3
                        AND ta.semester = $4`;
       courseParams = [courseCode.trim(), weekday.trim(), normalizedStartTime, currentSemester];
@@ -754,7 +762,7 @@ router.post('/register-course', requireStudent(), async (req: AuthenticatedStude
       
       if (hasCourseCode) {
         lookupQuery = `SELECT ta.course_code, ta.course_title, ta.weekday, to_char(ta.start_time, 'HH24:MI') AS start_time, ta.semester
-                       FROM teaching_assignments ta
+         FROM teaching_assignments ta
                        WHERE UPPER(ta.course_code) = UPPER($1) AND ta.semester = $2`;
         lookupParams = [courseCode.trim(), currentSemester];
         searchTerm = courseCode.trim();
@@ -785,7 +793,7 @@ router.post('/register-course', requireStudent(), async (req: AuthenticatedStude
         
         if (otherSemesterRows.length > 0) {
           const otherSemesters = otherSemesterRows.map((r: any) => r.semester).join(', ');
-          return res.status(404).json({ 
+        return res.status(404).json({ 
             error: `Course "${searchTerm}" is not available for the current semester (${currentSemester}). This course is available in semester(s): ${otherSemesters}.` 
           });
         }
@@ -816,8 +824,7 @@ router.post('/register-course', requireStudent(), async (req: AuthenticatedStude
       });
     }
 
-    // Check if registration period is still open
-    const { getRegistrationStatus } = await import('../services/systemService.js');
+    // Check if registration period is still open (already checked above, but double-check before enrollment)
     const registrationStatus = await getRegistrationStatus(currentSemester);
     
     if (!registrationStatus.open) {
@@ -961,6 +968,202 @@ router.post('/register-course', requireStudent(), async (req: AuthenticatedStude
     }
 
     return res.status(400).json({ error: message });
+  }
+});
+
+/**
+ * POST /api/agent/available-courses
+ * Get available courses for a specific major
+ * Requires authentication via Bearer token
+ * Request body: { studentId: number }
+ * Returns flat response with all available courses for the student's major in current semester
+ */
+router.post('/available-courses', requireStudent(), async (req: AuthenticatedStudentRequest, res) => {
+  try {
+    const { studentId } = req.body;
+
+    if (!studentId || !Number.isFinite(Number(studentId))) {
+      return res.status(400).json({ error: 'Invalid student ID in request body.' });
+    }
+
+    const pool = getPool();
+    if (!pool) {
+      return res.status(500).json({ error: 'Database connection not available.' });
+    }
+
+    // Get current semester
+    const currentSemester = await getCurrentSemester();
+    if (!currentSemester) {
+      return res.status(500).json({ error: 'Current semester not set in system.' });
+    }
+
+    // Fetch student's major from their profile
+    const student = await fetchStudentById(Number(studentId));
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found.' });
+    }
+
+    const targetMajor = student.primaryInterest || null;
+    if (!targetMajor) {
+      return res.status(400).json({ error: 'Student has no major assigned.' });
+    }
+
+    // Normalize major name (same logic as classroomService)
+    function normalizeMajorName(raw: string | null | undefined): string {
+      const value = (raw ?? '').trim().toLowerCase();
+      if (!value) return '';
+      const aliases: Record<string, string> = {
+        'bme': 'biomedical engineering',
+        'bio med': 'biomedical engineering',
+        'biomed': 'biomedical engineering',
+        'biomedical eng': 'biomedical engineering',
+        'business': 'business administration',
+        'business admin': 'business administration',
+        'bus admin': 'business administration',
+        'data sci': 'data science',
+        'data science': 'data science',
+        'international relations': 'international relations',
+        'intl relations': 'international relations',
+        'digital media': 'digital media design',
+        'digital media design': 'digital media design',
+        'environmental sci': 'environmental science',
+        'environmental science': 'environmental science',
+        'hospitality': 'hospitality management',
+        'hospitality management': 'hospitality management',
+        'ai': 'artificial intelligence',
+        'artificial intelligence': 'artificial intelligence',
+        'it': 'information technology',
+        'information technology': 'information technology',
+        'cybersecurity': 'cybersecurity',
+        'cyber security': 'cybersecurity',
+      };
+      return aliases[value] ?? value;
+    }
+
+    const normalizedMajor = normalizeMajorName(targetMajor);
+
+    // Query available courses for this major in current semester
+    const { rows } = await pool.query(
+      `SELECT DISTINCT ON (ta.course_code, ta.weekday, ta.start_time, ta.teacher_id)
+              ta.course_code AS "courseCode",
+              ta.course_title AS "courseTitle",
+              ta.major_focus AS "majorFocus",
+              ta.weekday,
+              to_char(ta.start_time, 'HH24:MI') AS "startTime",
+              to_char(ta.end_time, 'HH24:MI') AS "endTime",
+              ta.classroom_id AS "classroomId",
+              ta.teacher_id AS "teacherId",
+              sa.display_name AS "teacherName",
+              c.name AS "classroomName",
+              c.location AS "classroomLocation",
+              c.capacity,
+              ta.semester
+       FROM teaching_assignments ta
+       LEFT JOIN staff_accounts sa ON ta.teacher_id = sa.id
+       LEFT JOIN classrooms c ON ta.classroom_id = c.id
+       WHERE ta.semester = $1
+         AND ta.semester IS NOT NULL
+         AND TRIM(ta.semester) = TRIM($1)
+         AND (
+           LOWER(TRIM(ta.major_focus)) = LOWER(TRIM($2))
+           OR LOWER(TRIM(ta.major_focus)) LIKE LOWER(TRIM($2)) || '%'
+           OR LOWER(TRIM($2)) LIKE LOWER(TRIM(ta.major_focus)) || '%'
+         )
+       ORDER BY ta.course_code, ta.weekday, ta.start_time, ta.teacher_id, ta.id ASC`,
+      [currentSemester, normalizedMajor]
+    );
+
+    // Additional filtering to ensure major matches (case-insensitive, flexible matching)
+    const filteredCourses = rows.filter(row => {
+      const courseMajor = normalizeMajorName(row.majorFocus);
+      return courseMajor === normalizedMajor ||
+        courseMajor.includes(normalizedMajor) ||
+        normalizedMajor.includes(courseMajor);
+    });
+
+    // Get enrollment counts for each course
+    const enrollmentCounts = new Map<string, number>();
+    if (filteredCourses.length > 0) {
+      try {
+        // Build a list of course codes to query
+        const courseCodes = [...new Set(filteredCourses.map(c => c.courseCode))];
+        
+        // Query enrollment counts for all courses matching the major and semester
+        const { rows: countRows } = await pool.query(
+          `SELECT ta.course_code, ta.weekday, to_char(ta.start_time, 'HH24:MI') AS start_time, 
+                  COUNT(DISTINCT t.student_id)::int AS student_count
+           FROM teaching_assignments ta
+           LEFT JOIN timetables t ON 
+             LOWER(TRIM(t.subject)) = LOWER(TRIM(ta.course_title))
+             AND t.weekday = ta.weekday
+             AND to_char(t.start_time, 'HH24:MI') = to_char(ta.start_time, 'HH24:MI')
+             AND to_char(t.end_time, 'HH24:MI') = to_char(ta.end_time, 'HH24:MI')
+             AND t.location::TEXT = ta.classroom_id::TEXT
+           WHERE ta.semester = $1
+             AND ta.course_code = ANY($2::text[])
+           GROUP BY ta.course_code, ta.weekday, ta.start_time`,
+          [currentSemester, courseCodes]
+        );
+
+        for (const row of countRows) {
+          const key = `${row.course_code}|${row.weekday}|${row.start_time}`;
+          enrollmentCounts.set(key, Number(row.student_count || 0));
+        }
+      } catch (error) {
+        console.error('[Agent] Error fetching enrollment counts:', error);
+      }
+    }
+
+    // Format courses with enrollment info
+    const courses = filteredCourses.map(row => {
+      const enrollmentKey = `${row.courseCode}|${row.weekday}|${row.startTime}`;
+      const enrolledCount = enrollmentCounts.get(enrollmentKey) || 0;
+      const capacity = row.capacity || 0;
+      const availableSeats = Math.max(capacity - enrolledCount, 0);
+
+      return {
+        courseCode: row.courseCode,
+        courseTitle: row.courseTitle,
+        majorFocus: row.majorFocus,
+        weekday: row.weekday,
+        startTime: row.startTime,
+        endTime: row.endTime,
+        startTimeSingapore: formatTimeToSingapore(row.startTime),
+        endTimeSingapore: formatTimeToSingapore(row.endTime),
+        teacherId: row.teacherId,
+        teacherName: row.teacherName || null,
+        classroomId: row.classroomId,
+        classroomName: row.classroomName || null,
+        classroomLocation: row.classroomLocation || null,
+        capacity: capacity,
+        enrolledCount: enrolledCount,
+        availableSeats: availableSeats,
+        isFull: availableSeats === 0,
+        semester: row.semester
+      };
+    });
+
+    const generatedAt = formatDateTimeToSingapore(new Date().toISOString());
+    const registrationStatus = await getRegistrationStatus(currentSemester);
+    const semesterDate = await getSemesterDate(currentSemester);
+
+    return res.json({
+      generatedAtSingapore: generatedAt,
+      currentSemester: currentSemester,
+      major: targetMajor,
+      registrationStatus: {
+        open: registrationStatus.open,
+        reason: registrationStatus.reason || null,
+        message: registrationStatus.message || null,
+        startDate: semesterDate?.startDate || null,
+        endDate: semesterDate?.endDate || null
+      },
+      courses: courses,
+      totalCourses: courses.length
+    });
+  } catch (error) {
+    console.error('[Agent] Error fetching available courses:', error);
+    return res.status(500).json({ error: 'Failed to fetch available courses.' });
   }
 });
 

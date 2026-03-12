@@ -27,7 +27,7 @@ import { listClassroomEnrollmentsForStudent } from './classroomService.js';
 import type { ClassroomEnrollment } from './types.js';
 import { listStudentAssignments, type StudentAssignment } from './assignmentService.js';
 import { getCourseMetadata, getSubjectsForMajor } from '../utils/majors.js';
-import { getCurrentSemester, isRegistrationPeriodOpen, getRegistrationStatus } from './systemService.js';
+import { getCurrentSemester, isRegistrationPeriodOpen, getRegistrationStatus, listSemesterDates } from './systemService.js';
 
 type StudentSubjectSelection = {
   studentId: number;
@@ -497,11 +497,12 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
 
     console.log(`[StudentService] Fetching dashboard data for student ${studentId}`);
     const currentSemester = await getCurrentSemester();
-    const [grades, exams, gpaBySemester, registrationWindows, fees, classroomEnrollments, assignments] = await Promise.all([
+    const [grades, exams, gpaBySemester, registrationWindows, semesterDates, fees, classroomEnrollments, assignments] = await Promise.all([
       listStudentGrades(studentId),
       listExamAnnouncements(),
       listStudentSemesterGpa(studentId),
       listRegistrationWindows(),
+      listSemesterDates(),
       listStudentFeePayments(studentId),
       listClassroomEnrollmentsForStudent(studentId),
       listStudentAssignments(studentId)
@@ -601,6 +602,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       upcomingExams,
       gpaBySemester,
       registrationWindows: filteredRegistrationWindows,
+      semesterDates: semesterDates || [],
       fees,
       assignments: filteredAssignments
     };
@@ -664,7 +666,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       }
       
       [timetableResult, scheduleResult, registrationsResult] = await Promise.all([
-        pool.query<TimetableEntry>(
+      pool.query<TimetableEntry>(
           `SELECT t.id, t.student_id AS "studentId", t.weekday, 
                   to_char(t.start_time, 'HH24:MI') AS "startTime",
                   to_char(t.end_time, 'HH24:MI') AS "endTime", t.subject, t.location
@@ -702,39 +704,39 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
                )
              )
            ORDER BY CASE t.weekday
-             WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6 ELSE 7 END,
+           WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6 ELSE 7 END,
              to_char(t.start_time, 'HH24:MI') ASC`,
           [studentId, currentSemester]
-        ),
-        pool.query<ScheduleItem>(
-          `SELECT id, student_id AS "studentId", title, description,
-                  to_char(start_time AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "startTime",
-                  to_char(end_time AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "endTime"
-           FROM schedules
-           WHERE student_id = $1
-           ORDER BY start_time ASC`,
-          [studentId]
-        ),
+      ),
+      pool.query<ScheduleItem>(
+        `SELECT id, student_id AS "studentId", title, description,
+                to_char(start_time AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "startTime",
+                to_char(end_time AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "endTime"
+         FROM schedules
+         WHERE student_id = $1
+         ORDER BY start_time ASC`,
+        [studentId]
+      ),
         // Fetch ALL registrations (current and historical)
-        pool.query<ClassRegistration & { courseCode?: string }>(
-          `SELECT * FROM (
-             SELECT DISTINCT ON (cr.id)
-                    cr.id, cr.student_id AS "studentId", cr.class_name AS "className", cr.instructor, cr.status,
-                    cr.semester, cr.credits, cr.confirmed_by AS "confirmedBy",
-                    to_char(cr.registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "registeredAt",
-                    COALESCE(tr.course_code, ta.course_code) AS "courseCode"
-             FROM class_registrations cr
-             LEFT JOIN teacher_rosters tr ON tr.student_id = cr.student_id 
-               AND LOWER(TRIM(tr.course_title)) = LOWER(TRIM(cr.class_name))
-             LEFT JOIN teaching_assignments ta ON LOWER(TRIM(ta.course_title)) = LOWER(TRIM(cr.class_name))
+      pool.query<ClassRegistration & { courseCode?: string }>(
+        `SELECT * FROM (
+           SELECT DISTINCT ON (cr.id)
+                  cr.id, cr.student_id AS "studentId", cr.class_name AS "className", cr.instructor, cr.status,
+                  cr.semester, cr.credits, cr.confirmed_by AS "confirmedBy",
+                  to_char(cr.registered_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "registeredAt",
+                  COALESCE(tr.course_code, ta.course_code) AS "courseCode"
+           FROM class_registrations cr
+           LEFT JOIN teacher_rosters tr ON tr.student_id = cr.student_id 
+             AND LOWER(TRIM(tr.course_title)) = LOWER(TRIM(cr.class_name))
+           LEFT JOIN teaching_assignments ta ON LOWER(TRIM(ta.course_title)) = LOWER(TRIM(cr.class_name))
                AND (ta.semester = cr.semester OR (cr.semester IS NULL AND ta.semester = $2))
-             WHERE cr.student_id = $1
-             ORDER BY cr.id, COALESCE(tr.course_code, ta.course_code) NULLS LAST, cr.registered_at DESC
-           ) AS registrations
-           ORDER BY "registeredAt" DESC`,
+           WHERE cr.student_id = $1
+           ORDER BY cr.id, COALESCE(tr.course_code, ta.course_code) NULLS LAST, cr.registered_at DESC
+         ) AS registrations
+         ORDER BY "registeredAt" DESC`,
           [studentId, currentSemester]
-        )
-      ]);
+      )
+    ]);
       console.log(`[StudentService] Queries completed - timetable: ${timetableResult.rows.length}, schedule: ${scheduleResult.rows.length}, registrations: ${registrationsResult.rows.length}`);
     } catch (queryError) {
       console.error(`[StudentService] Error executing initial queries:`, queryError);
@@ -877,16 +879,18 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
     let exams: any[] = [];
     let gpaBySemester: any[] = [];
     let registrationWindows: any[] = [];
+    let semesterDates: any[] = [];
     let fees: any[] = [];
     let classroomEnrollments: ClassroomEnrollment[] = [];
     
     try {
-      [grades, exams, gpaBySemester, registrationWindows, fees, classroomEnrollments] = await Promise.all([
-        listStudentGrades(studentId),
-        listExamAnnouncements(),
-        listStudentSemesterGpa(studentId),
-        listRegistrationWindows(),
-        listStudentFeePayments(studentId),
+      [grades, exams, gpaBySemester, registrationWindows, semesterDates, fees, classroomEnrollments] = await Promise.all([
+      listStudentGrades(studentId),
+      listExamAnnouncements(),
+      listStudentSemesterGpa(studentId),
+      listRegistrationWindows(),
+        listSemesterDates(),
+      listStudentFeePayments(studentId),
         listClassroomEnrollmentsForStudent(studentId)
       ]);
     } catch (error) {
@@ -896,6 +900,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       exams = [];
       gpaBySemester = [];
       registrationWindows = [];
+      semesterDates = [];
       fees = [];
       classroomEnrollments = [];
     }
@@ -1106,6 +1111,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
       upcomingExams,
       gpaBySemester: gpaBySemester || [],
       registrationWindows: filteredRegistrationWindows || [],
+      semesterDates: semesterDates || [],
       fees: updatedFees || fees || [],
       assignments: filteredAssignments
     };
@@ -1138,6 +1144,7 @@ export async function fetchStudentDashboard(studentId: number): Promise<StudentD
           upcomingExams: [],
           gpaBySemester: [],
           registrationWindows: [],
+          semesterDates: [],
           fees: [],
           assignments: []
         };
@@ -1171,7 +1178,7 @@ export async function registerStudentForSemesterCourse(
   if (!registrationStatus.open) {
     throw new Error(registrationStatus.message || 'Registration is not available at this time.');
   }
-  
+
   if (offering.window.status !== 'open') {
     throw new Error('Registration for this semester is not open.');
   }

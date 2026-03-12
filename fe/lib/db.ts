@@ -130,6 +130,7 @@ export type StudentDashboardData = {
   upcomingExams: ExamAnnouncement[];
   gpaBySemester: SemesterGpa[];
   registrationWindows: SemesterRegistration[];
+  semesterDates?: SemesterDate[];
   fees: FeePayment[];
   assignments: StudentAssignment[];
 };
@@ -193,6 +194,7 @@ export type TeacherScheduleSlot = {
   teacherId: number;
   courseCode: string;
   courseTitle: string;
+  semester: string;
   weekday: string;
   startTime: string;
   endTime: string;
@@ -212,6 +214,7 @@ export type TeacherRosterStudent = {
 
 export type TeacherDashboard = {
   teacher: StaffAccount;
+  currentSemester: string;
   schedule: TeacherScheduleSlot[];
   rosters: TeacherRosterStudent[];
   recentGrades: GradeRecord[];
@@ -272,6 +275,8 @@ export type SemesterDate = {
   semester: string;
   startDate: string;
   endDate: string;
+  startDay?: string | null;
+  endDay?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -306,14 +311,54 @@ export async function setSemesterDate(
   token: string,
   semester: string,
   startDate: string,
-  endDate: string
+  endDate: string,
+  startDay?: string | null,
+  endDay?: string | null
 ): Promise<SemesterDate> {
   const data = await apiRequest<{ semesterDate: SemesterDate }>('/system/settings/semester-dates', {
     method: 'PUT',
-    body: { semester, startDate, endDate },
+    body: { semester, startDate, endDate, startDay, endDay },
     token
   });
   return data.semesterDate;
+}
+
+export async function deleteSemesterDate(
+  token: string,
+  semester: string
+): Promise<void> {
+  await apiRequest<{ message: string }>(`/system/settings/semester-dates/${encodeURIComponent(semester)}`, {
+    method: 'DELETE',
+    token
+  });
+}
+
+export async function listRegistrationWindows(token: string): Promise<SemesterRegistration[]> {
+  try {
+    const data = await apiRequest<{ registrationWindows: SemesterRegistration[] }>('/system/settings/registration-windows', {
+      method: 'GET',
+      token
+    });
+    return data.registrationWindows || [];
+  } catch (error) {
+    console.error('Failed to list registration windows:', error);
+    return [];
+  }
+}
+
+export async function setRegistrationWindow(
+  token: string,
+  semester: string,
+  opensAt: string,
+  closesAt: string,
+  status?: 'upcoming' | 'open' | 'closed'
+): Promise<SemesterRegistration> {
+  const data = await apiRequest<{ registrationWindow: SemesterRegistration }>('/system/settings/registration-windows', {
+    method: 'PUT',
+    body: { semester, opensAt, closesAt, status },
+    token
+  });
+  return data.registrationWindow;
 }
 
 function resolveApiBaseUrl() {

@@ -14,6 +14,7 @@ import { listClassrooms } from './classroomService.js';
 import { listStudents } from './studentService.js';
 import { findStaffById } from './staffService.js';
 import { listTeacherGrades } from './academicService.js';
+import { getCurrentSemester } from './systemService.js';
 import { registerSubjectForMajor } from '../utils/majors.js';
 
 let inMemoryAssignments = [...fallbackTeachingAssignments];
@@ -335,7 +336,7 @@ export async function assignTeacherToClassroom(
     // NOTE: Removed classroom conflict check - staff can assign same teacher to same time/day
     // Staff have the discretion to assign teachers to multiple courses at the same time if needed
     // This allows for flexible scheduling and different classroom/cohort assignments
-    
+
     // Do not mutate classroom resources with major tags; majors are tracked on assignments
 
     const { rows } = await pool.query(
@@ -711,6 +712,11 @@ function sortSchedule(slots: TeacherScheduleSlot[]): TeacherScheduleSlot[] {
 }
 
 export async function buildTeacherDashboard(teacherId: number): Promise<TeacherDashboardData | null> {
+  const currentSemester = await getCurrentSemester().catch((error) => {
+    console.error('[TeachingService] Failed to fetch current semester, defaulting to 1/2026', error);
+    return '1/2026';
+  });
+
   const [teacher, assignments, classrooms, rosterEntries, students, gradebook] = await Promise.all([
     findStaffById(teacherId),
     listTeachingAssignmentsForTeacher(teacherId),
@@ -727,14 +733,20 @@ export async function buildTeacherDashboard(teacherId: number): Promise<TeacherD
   const classroomMap = new Map(classrooms.map((room) => [room.id, room]));
   const studentMap = new Map(students.map((student) => [student.id, student]));
 
+  const filteredAssignments = assignments.filter((assignment) => {
+    const assignmentSemester = assignment.semester?.trim();
+    return assignmentSemester ? assignmentSemester === currentSemester.trim() : true;
+  });
+
   const schedule: TeacherScheduleSlot[] = sortSchedule(
-    assignments.map((assignment) => {
+    filteredAssignments.map((assignment) => {
       const classroom = classroomMap.get(assignment.classroomId);
       return {
         assignmentId: assignment.id,
         teacherId: assignment.teacherId,
         courseCode: assignment.courseCode,
         courseTitle: assignment.courseTitle,
+        semester: assignment.semester,
         weekday: assignment.weekday,
         startTime: assignment.startTime,
         endTime: assignment.endTime,
@@ -765,6 +777,7 @@ export async function buildTeacherDashboard(teacherId: number): Promise<TeacherD
 
   return {
     teacher,
+    currentSemester,
     schedule,
     rosters: roster,
     recentGrades,

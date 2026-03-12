@@ -24,6 +24,8 @@ import InputLabel from '@mui/material/InputLabel';
 import Select from '@mui/material/Select';
 import CircularProgress from '@mui/material/CircularProgress';
 import Tooltip from '@mui/material/Tooltip';
+import IconButton from '@mui/material/IconButton';
+import DeleteIcon from '@mui/icons-material/Delete';
 import {
   adminLogin,
   fetchTeacherDashboard,
@@ -40,8 +42,12 @@ import {
   updateCurrentSemester,
   getSemesterDate,
   setSemesterDate,
+  deleteSemesterDate,
   listSemesterDates,
   type SemesterDate,
+  listRegistrationWindows,
+  setRegistrationWindow,
+  type SemesterRegistration,
   listAnnouncements,
   createAnnouncement,
   deleteAnnouncement,
@@ -540,6 +546,12 @@ function TeacherWorkspace({ dashboard, loading, onRecordGrade, session }: Teache
     }
   }, [dashboard, formState.courseCode]);
 
+  useEffect(() => {
+    if (dashboard?.currentSemester) {
+      setFormState((prev) => ({ ...prev, semester: dashboard.currentSemester }));
+    }
+  }, [dashboard?.currentSemester]);
+
   const courseOptions = useMemo(
     () =>
       dashboard?.schedule.map((slot) => ({
@@ -661,6 +673,10 @@ function TeacherWorkspace({ dashboard, loading, onRecordGrade, session }: Teache
     }
   };
 
+  const schedule = dashboard?.schedule ?? [];
+  const scheduleBySemester = useMemo(() => schedule, [schedule]);
+  const currentSemester = dashboard?.currentSemester;
+
   return (
     <Stack spacing={4}>
       <Paper elevation={3} sx={{  p: { xs: 3, md: 4 } }}>
@@ -671,19 +687,24 @@ function TeacherWorkspace({ dashboard, loading, onRecordGrade, session }: Teache
                 Teaching schedule
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Review the classrooms and cohorts assigned to you for the week.
+                Review the classrooms and cohorts assigned to you for the week. Showing assignments for semester {currentSemester ?? '—'}.
               </Typography>
             </Box>
             {loading && <CircularProgress size={24} />}
           </Stack>
-
+          {scheduleBySemester.length === 0 ? (
+            <Alert severity="info">
+              No teaching assignments are configured for semester {currentSemester ?? '—'}. Please contact an administrator if this is unexpected.
+            </Alert>
+          ) : (
           <Grid container spacing={2}>
-            {(dashboard?.schedule ?? []).map((slot) => (
+            {scheduleBySemester.map((slot) => (
               <Grid key={slot.assignmentId} item xs={12} md={6} lg={4}>
                 <Paper variant="outlined" sx={{  p: 2.5, height: '100%' }}>
                   <Stack spacing={1.5}>
-                    <Stack direction="row" spacing={1} alignItems="center">
+                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                       <Chip label={slot.weekday} color="primary" size="small" sx={{ fontWeight: 600 }} />
+                      <Chip label={slot.semester} size="small" variant="outlined" />
                       <Typography variant="body2" color="text.secondary">
                         {formatTimeRange(slot)}
                       </Typography>
@@ -708,7 +729,7 @@ function TeacherWorkspace({ dashboard, loading, onRecordGrade, session }: Teache
                 <Alert severity="info">No active classroom assignments yet.</Alert>
               </Grid>
             )}
-          </Grid>
+          </Grid>)}
         </Stack>
       </Paper>
 
@@ -1078,8 +1099,19 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
   const [selectedSemesterForDates, setSelectedSemesterForDates] = useState<string>('1/2026');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
+  const [startDay, setStartDay] = useState<string>('');
+  const [endDay, setEndDay] = useState<string>('');
   const [semesterDateStatus, setSemesterDateStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [semesterDateError, setSemesterDateError] = useState<string>('');
+
+  // Registration windows state
+  const [registrationWindows, setRegistrationWindows] = useState<SemesterRegistration[]>([]);
+  const [selectedSemesterForRegistration, setSelectedSemesterForRegistration] = useState<string>('1/2026');
+  const [registrationOpensAt, setRegistrationOpensAt] = useState<string>('');
+  const [registrationClosesAt, setRegistrationClosesAt] = useState<string>('');
+  const [registrationStatus, setRegistrationStatus] = useState<'upcoming' | 'open' | 'closed'>('upcoming');
+  const [registrationWindowStatus, setRegistrationWindowStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+  const [registrationWindowError, setRegistrationWindowError] = useState<string>('');
 
   // Load current semester on mount
   useEffect(() => {
@@ -1088,6 +1120,7 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
         const semester = await getCurrentSemester(session.token);
         setCurrentSemester(semester);
         setSelectedSemesterForDates(semester);
+        setSelectedSemesterForRegistration(semester);
         // Update form state to use current semester as default
         setFormState(prev => ({ ...prev, semester }));
       } catch (error) {
@@ -1110,9 +1143,13 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
         if (currentSemesterDate) {
           setStartDate(currentSemesterDate.startDate);
           setEndDate(currentSemesterDate.endDate);
+          setStartDay(currentSemesterDate.startDay || '');
+          setEndDay(currentSemesterDate.endDay || '');
         } else {
           setStartDate('');
           setEndDate('');
+          setStartDay('');
+          setEndDay('');
         }
       } catch (error) {
         console.error('Failed to load semester dates', error);
@@ -1129,9 +1166,13 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
         if (semesterDate) {
           setStartDate(semesterDate.startDate);
           setEndDate(semesterDate.endDate);
+          setStartDay(semesterDate.startDay || '');
+          setEndDay(semesterDate.endDay || '');
         } else {
           setStartDate('');
           setEndDate('');
+          setStartDay('');
+          setEndDay('');
         }
       } catch (error) {
         console.error('Failed to load semester date', error);
@@ -1149,6 +1190,7 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
       const updated = await updateCurrentSemester(session.token, newSemester);
       setCurrentSemester(updated);
       setSelectedSemesterForDates(updated);
+      setSelectedSemesterForRegistration(updated);
       setSemesterUpdateStatus('success');
       setTimeout(() => setSemesterUpdateStatus('idle'), 3000);
     } catch (error) {
@@ -1176,7 +1218,14 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
     setSemesterDateError('');
     
     try {
-      const saved = await setSemesterDate(session.token, selectedSemesterForDates, startDate, endDate);
+      const saved = await setSemesterDate(
+        session.token, 
+        selectedSemesterForDates, 
+        startDate, 
+        endDate,
+        startDay || null,
+        endDay || null
+      );
       setSemesterDates(prev => {
         const filtered = prev.filter(d => d.semester !== saved.semester);
         return [...filtered, saved];
@@ -1186,6 +1235,80 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
     } catch (error) {
       setSemesterDateError(error instanceof Error ? error.message : 'Failed to save semester dates');
       setSemesterDateStatus('error');
+    }
+  };
+
+  const handleDeleteSemesterDate = async (semester: string) => {
+    if (!confirm(`Are you sure you want to delete semester dates for ${semester}? This action cannot be undone.`)) {
+      return;
+    }
+
+    setSemesterDateStatus('submitting');
+    setSemesterDateError('');
+
+    try {
+      await deleteSemesterDate(session.token, semester);
+      setSemesterDateStatus('success');
+      
+      // Reload semester dates
+      const dates = await listSemesterDates(session.token);
+      setSemesterDates(dates);
+      
+      // Clear form if deleted semester was selected
+      if (selectedSemesterForDates === semester) {
+        setStartDate('');
+        setEndDate('');
+        setStartDay('');
+        setEndDay('');
+        setSelectedSemesterForDates(currentSemester);
+      }
+      
+      setTimeout(() => setSemesterDateStatus('idle'), 3000);
+    } catch (error) {
+      setSemesterDateError(error instanceof Error ? error.message : 'Failed to delete semester dates');
+      setSemesterDateStatus('error');
+    }
+  };
+
+  const handleSaveRegistrationWindow = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    
+    if (!registrationOpensAt || !registrationClosesAt) {
+      setRegistrationWindowError('Please provide both open and close dates/times');
+      setRegistrationWindowStatus('error');
+      return;
+    }
+
+    if (new Date(registrationClosesAt) < new Date(registrationOpensAt)) {
+      setRegistrationWindowError('Close date/time must be after open date/time');
+      setRegistrationWindowStatus('error');
+      return;
+    }
+
+    setRegistrationWindowStatus('submitting');
+    setRegistrationWindowError('');
+    
+    try {
+      // Convert local datetime to ISO string
+      const opensAtISO = new Date(registrationOpensAt).toISOString();
+      const closesAtISO = new Date(registrationClosesAt).toISOString();
+      
+      const saved = await setRegistrationWindow(
+        session.token,
+        selectedSemesterForRegistration,
+        opensAtISO,
+        closesAtISO,
+        registrationStatus
+      );
+      setRegistrationWindows(prev => {
+        const filtered = prev.filter(w => w.semester !== saved.semester);
+        return [...filtered, saved];
+      });
+      setRegistrationWindowStatus('success');
+      setTimeout(() => setRegistrationWindowStatus('idle'), 3000);
+    } catch (error) {
+      setRegistrationWindowError(error instanceof Error ? error.message : 'Failed to save registration window');
+      setRegistrationWindowStatus('error');
     }
   };
 
@@ -1432,7 +1555,7 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
               Semester Start & End Dates
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Define the start and end dates for each semester. Students cannot register after the semester end date has passed.
+              Define when classes actually run for each semester. This is separate from registration windows - these dates indicate when students attend classes.
             </Typography>
           </Box>
           <Divider />
@@ -1501,6 +1624,20 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
           <Stack direction="row" spacing={2} justifyContent="flex-end">
             {semesterDateStatus === 'submitting' && <CircularProgress size={24} />}
             <Button
+              type="button"
+              variant="outlined"
+              onClick={() => {
+                setStartDate('');
+                setEndDate('');
+                setStartDay('');
+                setEndDay('');
+                setSelectedSemesterForDates(currentSemester);
+              }}
+              disabled={semesterDateStatus === 'submitting'}
+            >
+              Clear
+            </Button>
+            <Button
               type="submit"
               variant="contained"
               disabled={semesterDateStatus === 'submitting' || !startDate || !endDate}
@@ -1510,6 +1647,330 @@ function ItAdminWorkspace({ loading, assignments, classrooms, teachers, majors, 
           </Stack>
         </Stack>
       </Paper>
+
+      {/* Existing Semester Dates Table */}
+      {semesterDates.length > 0 && (
+        <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+          <Stack spacing={2}>
+            <Box>
+            <Typography variant="h6" fontWeight={600} gutterBottom>
+              Existing Semester Dates
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              View all configured semester dates (when classes run). Note: Registration windows (when students can register) are managed separately.
+            </Typography>
+            </Box>
+            <Divider />
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell><strong>Semester</strong></TableCell>
+                  <TableCell><strong>Start Date</strong></TableCell>
+                  <TableCell><strong>End Date</strong></TableCell>
+                  <TableCell><strong>Start Day</strong></TableCell>
+                  <TableCell><strong>End Day</strong></TableCell>
+                  <TableCell><strong>Duration</strong></TableCell>
+                  <TableCell><strong>Last Updated</strong></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {semesterDates
+                  .sort((a, b) => b.semester.localeCompare(a.semester))
+                  .map((date) => {
+                    const start = new Date(date.startDate);
+                    const end = new Date(date.endDate);
+                    const durationDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+                    const isCurrentSemester = date.semester === currentSemester;
+                    
+                    return (
+                      <TableRow 
+                        key={date.id}
+                        sx={{ 
+                          backgroundColor: isCurrentSemester ? 'action.selected' : 'transparent',
+                          '&:hover': { backgroundColor: 'action.hover' }
+                        }}
+                      >
+                        <TableCell
+                          onClick={() => {
+                            setSelectedSemesterForDates(date.semester);
+                            setStartDate(date.startDate);
+                            setEndDate(date.endDate);
+                            setStartDay(date.startDay || '');
+                            setEndDay(date.endDay || '');
+                          }}
+                          sx={{ cursor: 'pointer' }}
+                        >
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography variant="body2" fontWeight={isCurrentSemester ? 600 : 400}>
+                              {date.semester}
+                            </Typography>
+                            {isCurrentSemester && (
+                              <Chip label="Current" size="small" color="primary" />
+                            )}
+                          </Stack>
+                        </TableCell>
+                        <TableCell>
+                          {new Intl.DateTimeFormat('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric'
+                          }).format(start)}
+                        </TableCell>
+                        <TableCell>
+                          {new Intl.DateTimeFormat('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric'
+                          }).format(end)}
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" color={date.startDay ? 'text.primary' : 'text.secondary'}>
+                            {date.startDay || '—'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" color={date.endDay ? 'text.primary' : 'text.secondary'}>
+                            {date.endDay || '—'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" color="text.secondary">
+                            {durationDays} day{durationDays !== 1 ? 's' : ''}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" color="text.secondary">
+                            {new Intl.DateTimeFormat('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            }).format(new Date(date.updatedAt))}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={(e: React.MouseEvent) => {
+                              e.stopPropagation();
+                              handleDeleteSemesterDate(date.semester);
+                            }}
+                            disabled={semesterDateStatus === 'submitting'}
+                            aria-label={`Delete semester dates for ${date.semester}`}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+              </TableBody>
+            </Table>
+            {semesterDates.length === 0 && (
+              <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
+                No semester dates configured yet. Use the form above to add dates.
+              </Typography>
+            )}
+          </Stack>
+        </Paper>
+      )}
+
+      {/* Registration Windows */}
+      <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+        <Stack spacing={2.5} component="form" onSubmit={handleSaveRegistrationWindow} noValidate>
+          <Box>
+            <Typography variant="h6" fontWeight={600} gutterBottom>
+              Registration Windows
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Define when students can register for courses. This is separate from semester dates - these dates control when registration is open.
+            </Typography>
+          </Box>
+          <Divider />
+          
+          {registrationWindowStatus === 'error' && registrationWindowError && (
+            <Alert severity="error">{registrationWindowError}</Alert>
+          )}
+          {registrationWindowStatus === 'success' && (
+            <Alert severity="success">Registration window saved successfully</Alert>
+          )}
+
+          <Grid container spacing={2.5}>
+            <Grid item xs={12} md={3}>
+              <FormControl fullWidth required>
+                <InputLabel id="registration-semester-select">Semester</InputLabel>
+                <Select
+                  labelId="registration-semester-select"
+                  label="Semester"
+                  value={selectedSemesterForRegistration}
+                  onChange={(event) => setSelectedSemesterForRegistration(event.target.value)}
+                  disabled={registrationWindowStatus === 'submitting'}
+                >
+                  <MenuItem value="1/2026">1/2026</MenuItem>
+                  <MenuItem value="2/2026">2/2026</MenuItem>
+                  <MenuItem value="1/2027">1/2027</MenuItem>
+                  <MenuItem value="2/2027">2/2027</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <TextField
+                fullWidth
+                required
+                type="datetime-local"
+                label="Opens At"
+                value={registrationOpensAt}
+                onChange={(event) => setRegistrationOpensAt(event.target.value)}
+                disabled={registrationWindowStatus === 'submitting'}
+                InputLabelProps={{
+                  shrink: true,
+                }}
+              />
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <TextField
+                fullWidth
+                required
+                type="datetime-local"
+                label="Closes At"
+                value={registrationClosesAt}
+                onChange={(event) => setRegistrationClosesAt(event.target.value)}
+                disabled={registrationWindowStatus === 'submitting'}
+                InputLabelProps={{
+                  shrink: true,
+                }}
+                error={!!(registrationClosesAt && registrationOpensAt && new Date(registrationClosesAt) < new Date(registrationOpensAt))}
+                helperText={
+                  registrationClosesAt && registrationOpensAt && new Date(registrationClosesAt) < new Date(registrationOpensAt)
+                    ? 'Close time must be after open time'
+                    : ''
+                }
+              />
+            </Grid>
+            <Grid item xs={12} md={3}>
+              <FormControl fullWidth>
+                <InputLabel id="registration-status-select">Status</InputLabel>
+                <Select
+                  labelId="registration-status-select"
+                  label="Status"
+                  value={registrationStatus}
+                  onChange={(event) => setRegistrationStatus(event.target.value as 'upcoming' | 'open' | 'closed')}
+                  disabled={registrationWindowStatus === 'submitting'}
+                >
+                  <MenuItem value="upcoming">Upcoming</MenuItem>
+                  <MenuItem value="open">Open</MenuItem>
+                  <MenuItem value="closed">Closed</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+          </Grid>
+
+          <Stack direction="row" spacing={2} justifyContent="flex-end">
+            {registrationWindowStatus === 'submitting' && <CircularProgress size={24} />}
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={registrationWindowStatus === 'submitting' || !registrationOpensAt || !registrationClosesAt}
+            >
+              Save Registration Window
+            </Button>
+          </Stack>
+        </Stack>
+      </Paper>
+
+      {/* Existing Registration Windows Table */}
+      {registrationWindows.length > 0 && (
+        <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>
+          <Stack spacing={2}>
+            <Box>
+              <Typography variant="h6" fontWeight={600} gutterBottom>
+                Existing Registration Windows
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                View all configured registration windows (when students can register).
+              </Typography>
+            </Box>
+            <Divider />
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell><strong>Semester</strong></TableCell>
+                  <TableCell><strong>Opens At</strong></TableCell>
+                  <TableCell><strong>Closes At</strong></TableCell>
+                  <TableCell><strong>Status</strong></TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {registrationWindows
+                  .sort((a, b) => b.semester.localeCompare(a.semester))
+                  .map((window) => {
+                    const isCurrentSemester = window.semester === currentSemester;
+                    const opensAt = new Date(window.opensAt);
+                    const closesAt = new Date(window.closesAt);
+                    
+                    return (
+                      <TableRow 
+                        key={window.id}
+                        sx={{ 
+                          backgroundColor: isCurrentSemester ? 'action.selected' : 'transparent',
+                          '&:hover': { backgroundColor: 'action.hover' },
+                          cursor: 'pointer'
+                        }}
+                        onClick={() => {
+                          setSelectedSemesterForRegistration(window.semester);
+                          setRegistrationOpensAt(opensAt.toISOString().slice(0, 16));
+                          setRegistrationClosesAt(closesAt.toISOString().slice(0, 16));
+                          setRegistrationStatus(window.status);
+                        }}
+                      >
+                        <TableCell>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Typography variant="body2" fontWeight={isCurrentSemester ? 600 : 400}>
+                              {window.semester}
+                            </Typography>
+                            {isCurrentSemester && (
+                              <Chip label="Current" size="small" color="primary" />
+                            )}
+                          </Stack>
+                        </TableCell>
+                        <TableCell>
+                          {new Intl.DateTimeFormat('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          }).format(opensAt)}
+                        </TableCell>
+                        <TableCell>
+                          {new Intl.DateTimeFormat('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          }).format(closesAt)}
+                        </TableCell>
+                        <TableCell>
+                          <Chip 
+                            label={window.status} 
+                            size="small" 
+                            color={
+                              window.status === 'open' ? 'success' :
+                              window.status === 'closed' ? 'error' : 'default'
+                            }
+                          />
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+              </TableBody>
+            </Table>
+          </Stack>
+        </Paper>
+      )}
 
       {/* Assign Teacher to Classroom */}
       <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', p: { xs: 3, md: 4 } }}>

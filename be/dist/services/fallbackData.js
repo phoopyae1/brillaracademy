@@ -2384,25 +2384,25 @@ export const fallbackSemesterGpa = [
         id: 1,
         studentId: 1,
         semester: 'Fall 2023',
-        gpa: 3.72
+        gpa: 2.79
     },
     {
         id: 2,
         studentId: 1,
         semester: 'Spring 2024',
-        gpa: 3.88
+        gpa: 2.91
     },
     {
         id: 3,
         studentId: 2,
         semester: 'Fall 2023',
-        gpa: 3.65
+        gpa: 2.74
     },
     {
         id: 4,
         studentId: 2,
         semester: 'Spring 2024',
-        gpa: 3.74
+        gpa: 2.81
     }
 ];
 export const fallbackRegistrationWindows = [
@@ -2410,8 +2410,8 @@ export const fallbackRegistrationWindows = [
         id: 1,
         semester: '1/2026',
         status: 'open',
-        opensAt: '2025-08-10T12:00:00Z',
-        closesAt: '2025-09-10T23:59:59Z',
+        opensAt: '2025-11-11T12:00:00Z',
+        closesAt: '2026-01-05T23:59:59Z',
         courses: [
             {
                 courseCode: 'BIOE-630',
@@ -2431,8 +2431,8 @@ export const fallbackRegistrationWindows = [
         id: 2,
         semester: '2/2026',
         status: 'upcoming',
-        opensAt: '2025-11-15T12:00:00Z',
-        closesAt: '2026-01-10T23:59:59Z',
+        opensAt: '2026-03-15T12:00:00Z',
+        closesAt: '2026-05-05T23:59:59Z',
         courses: [
             {
                 courseCode: 'BIOE-650',

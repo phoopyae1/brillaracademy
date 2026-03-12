@@ -1,3 +1,5 @@
+import type { SemesterDate } from './systemService.js';
+
 export type Feature = {
   id: number;
   name: string;
@@ -61,6 +63,7 @@ export type StudentDashboardData = {
   upcomingExams: ExamAnnouncement[];
   gpaBySemester: SemesterGpa[];
   registrationWindows: SemesterRegistration[];
+  semesterDates?: SemesterDate[];
   fees: FeePayment[];
   assignments: Array<{
     id: number;
@@ -217,6 +220,7 @@ export type TeacherScheduleSlot = {
   teacherId: number;
   courseCode: string;
   courseTitle: string;
+  semester: string;
   weekday: string;
   startTime: string;
   endTime: string;
@@ -237,6 +241,7 @@ export type TeacherRosterEntry = {
 
 export type TeacherDashboardData = {
   teacher: StaffAccount;
+  currentSemester: string;
   schedule: TeacherScheduleSlot[];
   rosters: Array<{
     courseCode: string;
